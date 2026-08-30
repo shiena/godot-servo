@@ -33,8 +33,8 @@ Windows / D3D12 で動作を確認済み。
 | macOS / Metal | IOSurface → `MTLTexture` | 実装済み・未実行 |
 | Windows / Vulkan (既定) | — | CPU リードバックに落ちる |
 | Linux / Vulkan | — | CPU リードバックに落ちる。WSL2 で確認 |
-| Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | ビルドと APK 化まで確認。実行は未 |
-| Android / Forward+ · Mobile | — | CPU リードバックに落ちる |
+| Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | 初期化は通るがクラッシュ |
+| Android / Forward+ · Mobile | — | CPU リードバック。Beam Pro で確認 |
 | その他 | `glReadPixels` → `ImageTexture` | 動作確認済み |
 
 GPU 共有が使えない環境では自動的に CPU リードバックへ落ちる。
@@ -124,8 +124,14 @@ adb install -r godot-servo.apk
 arm64-v8a のサイズ: debug 1474 MB、release 170 MB、`--strip-all` 後 119 MB、APK 146 MB。
 大半は SpiderMonkey、Stylo、WebRender、ICU のデータ。
 
-`project.godot` はモバイルのレンダラを `gl_compatibility` にしている。AHardwareBuffer の
-経路がそれを要求するため。Forward+ / Mobile では CPU リードバックに落ちる。
+`project.godot` のモバイルのレンダラは `mobile` のままにしてある。CPU リードバック経路に
+なるが、この組み合わせは動く。拡張が読み込まれ、Servo が起動し、ページが 3D の板に出る
+ところまで Beam Pro で確認した。
+
+`gl_compatibility` に変えると AHardwareBuffer の経路に入る。`android-ahardwarebuffer` と
+表示されたあと、`libgodot_android.so` の中の `memcpy` (`GodotLib_step` の下) で SIGSEGV する。
+スタックにこの拡張のフレームは 1 つも出ない。Compatibility レンダラでの `ExternalTexture` の
+扱いか、こちらの使い方の誤りかは切り分けられていない。未解決。
 
 ## 使い方
 

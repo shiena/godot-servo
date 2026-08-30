@@ -34,8 +34,7 @@ func _ready() -> void:
 
 
 func _local_page_url() -> String:
-	var absolute := ProjectSettings.globalize_path("res://demo/web/index.html")
-	return "file:///" + absolute.replace("\\", "/").trim_prefix("/")
+	return WebAssets.page_url("index")
 
 
 func _run() -> void:

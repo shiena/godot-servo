@@ -44,8 +44,8 @@ Verified on Windows with the Direct3D 12 renderer.
 | macOS / Metal | IOSurface to `MTLTexture` | Written, never run |
 | Windows / Vulkan (default) | — | Falls back to CPU readback |
 | Linux / Vulkan | — | Falls back to CPU readback, verified on WSL2 |
-| Android / Compatibility | `AHardwareBuffer` to `EGLImage` to `ExternalTexture` | Builds and packages; not yet run |
-| Android / Forward+ or Mobile | — | Falls back to CPU readback |
+| Android / Compatibility | `AHardwareBuffer` to `EGLImage` to `ExternalTexture` | Initialises, then crashes |
+| Android / Forward+ or Mobile | — | CPU readback, verified on a Beam Pro |
 | Anything else | `glReadPixels` to `ImageTexture` | Verified |
 
 Call `ServoWebView.get_backend_name()` to see which path a running instance took.
@@ -136,8 +136,14 @@ adb install -r godot-servo.apk
 Sizes for arm64-v8a: 1474 MB debug, 170 MB release, 119 MB after `--strip-all`, giving a 146 MB
 APK. Most of that is SpiderMonkey, Stylo, WebRender, and the ICU data.
 
-`project.godot` sets the mobile renderer to `gl_compatibility`, because the AHardwareBuffer path
-needs it. On Forward+ or Mobile the extension falls back to CPU readback.
+`project.godot` leaves the mobile renderer on `mobile`, which takes the CPU readback path. That
+combination runs: the extension loads, Servo starts, and the page reaches the 3D panel on a
+Beam Pro.
+
+Switching it to `gl_compatibility` selects the AHardwareBuffer path. That path reports
+`android-ahardwarebuffer` and then dies with SIGSEGV inside `libgodot_android.so`, in a `memcpy`
+under `GodotLib_step`. No frame of this extension appears on that stack, so it is either Godot's
+handling of `ExternalTexture` on the Compatibility renderer or a misuse of it here. Unresolved.
 
 ## Quickstart
 

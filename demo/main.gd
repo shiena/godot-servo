@@ -46,19 +46,14 @@ func _build_browser() -> void:
 	browser.ime_dismissed.connect(_on_ime_dismissed)
 
 
-## res:// のパスをブラウザが開ける file:// URL に直す。
-## `-- --page webgl` のように渡すと res://web/<name>.html を開く。
+## 開くページを決める。`-- --page webgl` のように渡すと切り替えられる。
 func _local_page_url() -> String:
 	var page := "index"
 	var args := OS.get_cmdline_user_args()
 	var index := args.find("--page")
 	if index >= 0 and index + 1 < args.size():
 		page = args[index + 1]
-	# http(s):// を直接渡すこともできる。ES モジュールは file:// では読めないため。
-	if page.begins_with("http"):
-		return page
-	var absolute := ProjectSettings.globalize_path("res://demo/web/%s.html" % page)
-	return "file:///" + absolute.replace("\\", "/").trim_prefix("/")
+	return WebAssets.page_url(page)
 
 
 # ── シーンの組み立て ──────────────────────────────────────────────────────
