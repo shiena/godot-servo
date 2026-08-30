@@ -9,6 +9,8 @@ extends Node
 ##
 ## 結果は標準出力に出る。すべて OK なら終了コード 0。
 
+const WebAssets = preload("res://demo/web_assets.gd")
+
 const VIEW_SIZE := Vector2i(1280, 720)
 ## 検査全体の制限時間。CI の遅いランナーでも 1 分あれば終わる。
 const WATCHDOG_SECONDS := 180

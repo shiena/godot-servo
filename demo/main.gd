@@ -5,6 +5,8 @@ extends Node3D
 ## そのまま WebView に転送する。ページ側から飛んでくるイベントは
 ## ServoWebView の bridge_event シグナルで受け取る。
 
+const WebAssets = preload("res://demo/web_assets.gd")
+
 ## 板の物理サイズ (メートル)。
 const PANEL_SIZE := Vector2(1.92, 1.08)
 ## WebView の解像度 (ピクセル)。

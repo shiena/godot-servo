@@ -4,6 +4,8 @@ extends Control
 ## 3D の板を挟まないぶん座標変換が単純なので、まず絵が出るか / 入力が通るかを
 ## 切り分けたいときはこちらを使う。
 
+const WebAssets = preload("res://demo/web_assets.gd")
+
 const VIEW_SIZE := Vector2i(1280, 720)
 
 var browser: ServoWebView
