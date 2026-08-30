@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>WebGPU check</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05070d; color: #cfd8e8;
+               font: 13px/1.5 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #hud { position: fixed; left: 14px; top: 12px; z-index: 2; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="hud">初期化中…</div>
+<canvas id="gpu"></canvas>
+<script>
+const hud = document.getElementById('hud');
+const canvas = document.getElementById('gpu');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+function fail(reason) {
+  hud.textContent = 'WebGPU: ' + reason;
+  godot.emit('webgpu', { ok: false, reason: String(reason) });
+}
+
+function step(name, extra) {
+  hud.textContent = 'WebGPU: ' + name;
+  godot.emit('webgpu-step', Object.assign({ step: name }, extra || {}));
+}
+
+window.addEventListener('unhandledrejection', function (e) {
+  fail('unhandled rejection: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+});
+
+(async function () {
+  step('start', { hasGpu: !!navigator.gpu, secure: window.isSecureContext });
+  if (!navigator.gpu) {
+    fail('navigator.gpu が無い');
+    return;
+  }
+  try {
+    step('requestAdapter');
+    const adapter = await navigator.gpu.requestAdapter();
+    step('adapter', { got: !!adapter });
+    if (!adapter) {
+      fail('requestAdapter が null');
+      return;
+    }
+    const device = await adapter.requestDevice();
+    step('device');
+    const context = canvas.getContext('webgpu');
+    step('context', { got: !!context });
+    if (!context) {
+      fail("getContext('webgpu') が null");
+      return;
+    }
+
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    context.configure({ device: device, format: format, alphaMode: 'opaque' });
+
+    const shader = device.createShaderModule({
+      code: `
+        struct VSOut {
+          @builtin(position) pos: vec4f,
+          @location(0) color: vec3f,
+        };
+
+        @group(0) @binding(0) var<uniform> t: f32;
+
+        @vertex
+        fn vs(@builtin(vertex_index) i: u32) -> VSOut {
+          var p = array<vec2f, 3>(
+            vec2f(0.0, 0.75), vec2f(-0.75, -0.55), vec2f(0.75, -0.55)
+          );
+          let s = sin(t);
+          let k = cos(t);
+          let r = mat2x2f(k, -s, s, k) * p[i];
+          var out: VSOut;
+          out.pos = vec4f(r, 0.0, 1.0);
+          out.color = vec3f(p[i] * 0.5 + 0.5, 0.85);
+          return out;
+        }
+
+        @fragment
+        fn fs(in: VSOut) -> @location(0) vec4f {
+          return vec4f(in.color, 1.0);
+        }
+      `,
+    });
+
+    const uniform = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const pipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: shader, entryPoint: 'vs' },
+      fragment: { module: shader, entryPoint: 'fs', targets: [{ format: format }] },
+      primitive: { topology: 'triangle-list' },
+    });
+
+    const bindGroup = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: uniform } }],
+    });
+
+    let frames = 0;
+    function draw(now) {
+      device.queue.writeBuffer(uniform, 0, new Float32Array([now * 0.001]));
+
+      const encoder = device.createCommandEncoder();
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: context.getCurrentTexture().createView(),
+          clearValue: { r: 0.02, g: 0.03, b: 0.05, a: 1.0 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        }],
+      });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3);
+      pass.end();
+      device.queue.submit([encoder.finish()]);
+
+      frames += 1;
+      if (frames === 60) {
+        const info = adapter.info || {};
+        hud.textContent = 'WebGPU\n' + (info.vendor || '?') + ' / ' + (info.architecture || '?');
+        godot.emit('webgpu', {
+          ok: true,
+          vendor: info.vendor || null,
+          architecture: info.architecture || null,
+        });
+      }
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+  } catch (error) {
+    fail(error && error.message ? error.message : error);
+  }
+})();
+</script>
+</body>
+</html>

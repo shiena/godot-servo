@@ -44,8 +44,17 @@ func _build_browser() -> void:
 
 
 ## res:// のパスをブラウザが開ける file:// URL に直す。
+## `-- --page webgl` のように渡すと res://web/<name>.html を開く。
 func _local_page_url() -> String:
-	var absolute := ProjectSettings.globalize_path("res://web/index.html")
+	var page := "index"
+	var args := OS.get_cmdline_user_args()
+	var index := args.find("--page")
+	if index >= 0 and index + 1 < args.size():
+		page = args[index + 1]
+	# http(s):// を直接渡すこともできる。ES モジュールは file:// では読めないため。
+	if page.begins_with("http"):
+		return page
+	var absolute := ProjectSettings.globalize_path("res://web/%s.html" % page)
 	return "file:///" + absolute.replace("\\", "/").trim_prefix("/")
 
 

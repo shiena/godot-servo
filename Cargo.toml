@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 godot = { version = "0.5.5", features = ["api-4-4"] }
-servo = { version = "0.5.0", features = ["no-wgl"] }
+servo = { version = "0.5.0", features = ["no-wgl", "webgpu"] }
 surfman = { version = "0.13.0", features = ["chains", "sm-angle-default"] }
 glow = "0.17"
 gleam = "0.15"

@@ -122,6 +122,58 @@ JavaScript を書かずに、素のリンクでも飛ばせる。
 シグナル: `frame_updated`, `title_changed`, `url_changed`, `load_started`,
 `load_finished`, `cursor_changed`, `console_message`, `bridge_event`, `script_result`
 
+## WebGL / WebGPU
+
+Servo は WebGL / WebGPU の描画結果も同じ共有テクスチャに乗せてくる。
+`demo/web/` に確認用ページを置いてある。
+
+| | 結果 |
+|---|---|
+| WebGL 1.0 | 動く |
+| WebGL 2.0 | 動く (`enable_webgl2` が必要) |
+| three.js r128 | 動く |
+| three.js 0.180 (最新) | 動く (WebGL 2.0 経由) |
+| WebGPU | **実用にならない。プロセスが落ちる** |
+
+WebGL2 と WebGPU はどちらも Servo 側の既定が無効なので、`ServoWebView` の
+`enable_webgl2` / `enable_webgpu` から `dom_webgl2_enabled` /
+`dom_webgpu_enabled` を立てている。
+
+```sh
+"$GODOT" --path demo --quit-after 700 -- --page webgl          # 素の WebGL
+"$GODOT" --path demo --quit-after 700 -- --page three-legacy   # three.js r128
+
+# ES モジュールを使うページはローカルサーバ経由で開く。
+( cd demo/web && python -m http.server 8731 --bind 127.0.0.1 & )
+"$GODOT" --path demo --quit-after 700 -- --page http://127.0.0.1:8731/three.html
+```
+
+`--page` は `res://web/<name>.html` を開く。`http` で始まる文字列を渡すとそのまま
+URL として扱う。
+
+### WebGPU の状態
+
+`webgpu` feature を有効にしてビルドし、`enable_webgpu` を立てると
+`navigator.gpu` は生えて、`requestAdapter()` / `requestDevice()` /
+コンピュートシェーダの実行と読み戻しまでは正しく動く
+(`demo/web/webgpu-compute.html` が `[0, 20, 126]` を返す)。
+
+ただし **プロセスが segfault で落ちる**。canvas に提示しようとすると確実に、
+コンピュートのみでも終了時に落ちた。原因は未調査。既定は無効にしてある。
+
+`file://` から開いた場合は `requestAdapter()` が解決しないまま止まる。
+`http://127.0.0.1` からなら先へ進む。
+
+### webgpu feature を有効にするときの注意
+
+そのままでは `wgpu-hal` のビルドが落ちる。`ipc-channel` が `windows ^0.61` を
+要求するため `gpu-allocator` (`windows >=0.53, <=0.62`) が 0.61 に引きずられ、
+`windows 0.62` を要求する `wgpu-hal` と型が合わなくなる。
+
+```sh
+cargo update -p gpu-allocator   # gpu-allocator の windows を 0.62 に寄せる
+```
+
 ## 設計メモ
 
 ### 単一バッファ
@@ -157,6 +209,7 @@ Vulkan ドライバは同じ判定に `|| created_from_extension` の例外を�
 - **Scene Color の逆流** (CSS `backdrop-filter` でゲーム画面をぼかす)。
   Godot 側は `CompositorEffect` で足りるが、受け取る Servo 側に
   `WebRenderImageHandlerType` を足す fork が要る。
+- **WebGPU**。上記のとおりプロセスが落ちる。
 - IME。`InputEvent::Ime` は Servo 側にあるが未接続。
 - 複数 `ServoWebView` の同時利用。`Servo` 本体は共有する作りにしてあるが未検証。
 - macOS / Linux の実機確認。

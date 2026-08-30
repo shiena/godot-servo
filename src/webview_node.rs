@@ -11,7 +11,7 @@ use godot::classes::{INode, InputEvent, InputEventKey, InputEventMouseButton, In
 use godot::global::{Key as GodotKey, MouseButton as GodotMouseButton};
 use godot::prelude::*;
 use servo::{
-    Code, DevicePoint, InputEvent as ServoInputEvent, JSValue, Key, KeyState, KeyboardEvent,
+    Code, DevicePoint, PrefValue, InputEvent as ServoInputEvent, JSValue, Key, KeyState, KeyboardEvent,
     Location, Modifiers, MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, Servo,
     ServoBuilder, UserContentManager, UserScript, WebView, WebViewBuilder, WheelDelta, WheelEvent,
     WheelMode,
@@ -54,6 +54,21 @@ pub struct ServoWebView {
     #[export]
     #[init(val = true)]
     autostart: bool,
+
+    /// WebGL 2.0 を有効にする。Servo の既定は無効。
+    #[export]
+    #[init(val = true)]
+    enable_webgl2: bool,
+
+    /// WebGPU を有効にする。既定は無効。
+    ///
+    /// Servo 0.5.0 の WebGPU はこの組み込みでは実用にならない。デバイス生成と
+    /// コンピュートシェーダまでは動くが、プロセスが segfault で落ちる
+    /// (canvas への提示を試みた場合は確実に、コンピュートのみでも終了時に)。
+    /// 追試したい場合だけ true にすること。
+    #[export]
+    #[init(val = false)]
+    enable_webgpu: bool,
 
     inner: Option<Inner>,
     next_script_id: i64,
@@ -149,6 +164,11 @@ impl ServoWebView {
 
         let waker = GodotWaker::new();
         let servo = servo_instance::acquire(&waker);
+
+        // どちらも Servo の既定は無効。プロセス全体の設定なので、最初に起動した
+        // ノードの指定が効く。
+        servo.set_preference("dom_webgl2_enabled", PrefValue::Bool(self.enable_webgl2));
+        servo.set_preference("dom_webgpu_enabled", PrefValue::Bool(self.enable_webgpu));
 
         let user_content = Rc::new(UserContentManager::new(&servo));
         user_content.add_script(Rc::new(UserScript::new(BRIDGE_SCRIPT.to_owned(), None)));

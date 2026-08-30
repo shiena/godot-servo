@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>WebGPU compute check</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05070d; color: #cfd8e8;
+               font: 13px/1.5 "Segoe UI", system-ui, sans-serif; }
+  #hud { padding: 14px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="hud">初期化中…</div>
+<script>
+// canvas をいっさい使わない WebGPU。デバイス生成と計算だけを試す。
+// canvas 版が落ちるのが「WebGPU そのもの」なのか「canvas への提示経路」なのかを
+// 切り分けるためのページ。
+const hud = document.getElementById('hud');
+
+function report(payload) {
+  hud.textContent = JSON.stringify(payload, null, 2);
+  godot.emit('webgpu-compute', payload);
+}
+
+window.addEventListener('unhandledrejection', function (e) {
+  report({ ok: false, reason: 'unhandled rejection: ' + e.reason });
+});
+
+(async function () {
+  if (!navigator.gpu) {
+    report({ ok: false, reason: 'navigator.gpu が無い' });
+    return;
+  }
+  try {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      report({ ok: false, reason: 'requestAdapter が null' });
+      return;
+    }
+    const device = await adapter.requestDevice();
+
+    const module = device.createShaderModule({
+      code: `
+        @group(0) @binding(0) var<storage, read_write> data: array<u32>;
+        @compute @workgroup_size(64)
+        fn main(@builtin(global_invocation_id) id: vec3u) {
+          data[id.x] = id.x * 2u;
+        }
+      `,
+    });
+
+    const count = 64;
+    const bytes = count * 4;
+    const storage = device.createBuffer({
+      size: bytes,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+    const readback = device.createBuffer({
+      size: bytes,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const pipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: { module: module, entryPoint: 'main' },
+    });
+    const bindGroup = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: storage } }],
+    });
+
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(1);
+    pass.end();
+    encoder.copyBufferToBuffer(storage, 0, readback, 0, bytes);
+    device.queue.submit([encoder.finish()]);
+
+    await readback.mapAsync(GPUMapMode.READ);
+    const values = new Uint32Array(readback.getMappedRange().slice(0));
+    readback.unmap();
+
+    const expected = values[10] === 20 && values[63] === 126;
+    const info = adapter.info || {};
+    report({
+      ok: expected,
+      sample: [values[0], values[10], values[63]],
+      vendor: info.vendor || null,
+      architecture: info.architecture || null,
+    });
+  } catch (error) {
+    report({ ok: false, reason: String(error && error.message ? error.message : error) });
+  }
+})();
+</script>
+</body>
+</html>

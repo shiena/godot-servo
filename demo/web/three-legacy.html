@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>three.js r128</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05070d; color: #cfd8e8;
+               font: 13px/1.5 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  #hud { position: fixed; left: 14px; top: 12px; z-index: 2; white-space: pre-wrap;
+         max-width: 90vw; }
+</style>
+</head>
+<body>
+<div id="hud">初期化中…</div>
+<script src="./vendor/three.r128.js"></script>
+<script>
+// three.js は r163 で WebGL1 対応を落としている。Servo が WebGL 2.0 を出さない
+// 環境でも動く世代として r128 を置いてある。
+const hud = document.getElementById('hud');
+
+try {
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05070d);
+
+  const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera.position.set(0, 1.2, 4);
+  camera.lookAt(0, 0, 0);
+
+  scene.add(new THREE.AmbientLight(0x404a60, 1.2));
+  const key = new THREE.DirectionalLight(0xffffff, 1.0);
+  key.position.set(3, 4, 2);
+  scene.add(key);
+
+  const group = new THREE.Group();
+  scene.add(group);
+
+  const shapes = [
+    new THREE.TorusKnotGeometry(0.6, 0.2, 128, 32),
+    new THREE.IcosahedronGeometry(0.55, 1),
+    new THREE.BoxGeometry(0.8, 0.8, 0.8),
+  ];
+  shapes.forEach(function (geometry, index) {
+    const material = new THREE.MeshStandardMaterial({
+      color: [0x7dd3fc, 0xc4b5fd, 0xfca5a5][index],
+      roughness: 0.25,
+      metalness: 0.65,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.x = (index - 1) * 1.7;
+    group.add(mesh);
+  });
+
+  let frames = 0;
+  function loop(time) {
+    requestAnimationFrame(loop);
+    group.rotation.y = time * 0.0006;
+    group.children.forEach(function (mesh, index) {
+      mesh.rotation.x = time * 0.001 * (index + 1);
+    });
+    renderer.render(scene, camera);
+    frames += 1;
+    if (frames === 60) {
+      const context = renderer.getContext();
+      const info = context.getParameter(context.VERSION);
+      hud.textContent = 'three.js ' + THREE.REVISION + '\n' + info;
+      godot.emit('three', { version: 'r128', ok: true, gl: info, revision: THREE.REVISION });
+    }
+  }
+  requestAnimationFrame(loop);
+} catch (error) {
+  hud.textContent = 'three.js r128: ' + error;
+  godot.emit('three', { version: 'r128', ok: false, reason: String(error) });
+}
+</script>
+</body>
+</html>
