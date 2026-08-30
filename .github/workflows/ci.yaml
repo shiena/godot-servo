@@ -105,20 +105,18 @@ jobs:
 
   # GPU 共有 (AHardwareBuffer) は Compatibility レンダラでのみ成立し、
   # Forward+ / Mobile では CPU リードバックに落ちる。
+  # arm64-v8a だけ作る。x86_64 の Android はエミュレータと ChromeOS くらいにしか
+  # 残っておらず、書き出しプリセットもリリースも arm64-v8a しか扱わない。
   android:
-    name: Build (Android ${{ matrix.abi }})
+    name: Build (Android arm64-v8a)
     runs-on: ubuntu-latest
     timeout-minutes: 100
-    strategy:
-      fail-fast: false
-      matrix:
-        abi: [arm64-v8a, x86_64]
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android, x86_64-linux-android
+          targets: aarch64-linux-android
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -134,10 +132,10 @@ jobs:
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
           # Android だけ release で作る。debug の .so は 1.5 GB あり、
           # APK に載せられる大きさではない。
-          ./scripts/build.sh --release --android --abi ${{ matrix.abi }}
+          ./scripts/build.sh --release --android
 
       - uses: actions/upload-artifact@v4
         with:
-          name: godot_servo-android-${{ matrix.abi }}
+          name: godot_servo-android-arm64-v8a
           path: addons/godot_servo/bin/android/
           if-no-files-found: error
