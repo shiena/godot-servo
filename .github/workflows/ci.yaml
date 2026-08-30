@@ -124,11 +124,12 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
+      # ランナーは ANDROID_NDK_ROOT を実際の環境変数として持っている。
+      # `${{ env.* }}` はワークフローの env しか見ないので、ここで移し替える。
       - name: Build and stage the addon
-        env:
-          # ランナーにプリインストールされている NDK を使う。
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
-        run: ./scripts/build.sh --android --abi ${{ matrix.abi }}
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          ./scripts/build.sh --android --abi ${{ matrix.abi }}
 
       - uses: actions/upload-artifact@v4
         with:
