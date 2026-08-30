@@ -129,7 +129,9 @@ jobs:
       - name: Build and stage the addon
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
-          ./scripts/build.sh --android --abi ${{ matrix.abi }}
+          # Android だけ release で作る。debug の .so は 1.5 GB あり、
+          # APK に載せられる大きさではない。
+          ./scripts/build.sh --release --android --abi ${{ matrix.abi }}
 
       - uses: actions/upload-artifact@v4
         with:

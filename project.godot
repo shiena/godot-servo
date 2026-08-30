@@ -25,4 +25,5 @@ window/size/viewport_height=720
 
 [rendering]
 
+renderer/rendering_method.mobile="gl_compatibility"
 rendering_device/driver.windows="d3d12"
