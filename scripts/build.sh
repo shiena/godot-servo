@@ -91,6 +91,14 @@ fi
 
 if [ "$do_build" = 1 ]; then
 	if [ "$android" = 1 ]; then
+		# NDK r23 以降は libgcc を廃して libunwind に移行したが、依存のどれかが
+		# まだ `-lgcc` を要求してリンクが落ちる。libunwind へ読み替えるスタブを
+		# 置いて、そのディレクトリを探索パスに足す。
+		gcc_stub="$repo_root/target/android-libgcc-stub"
+		mkdir -p "$gcc_stub"
+		echo 'INPUT(-lunwind)' > "$gcc_stub/libgcc.a"
+		export RUSTFLAGS="${RUSTFLAGS:-} -L $gcc_stub"
+
 		# cargo-ndk と ANDROID_NDK_HOME が要る。
 		say "cargo ndk -t $abi build ($profile)"
 		if [ "$profile" = release ]; then

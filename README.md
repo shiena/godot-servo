@@ -93,8 +93,11 @@ scripts/build.ps1 -Release
 ```
 
 Android has to be cross-compiled from Linux or macOS. jemalloc's `configure` rejects a Windows
-build host (`Invalid configuration 'x86_64-pc-win32'`), so `-Android` in `build.ps1` only works
-under WSL or a Linux machine.
+build host (`Invalid configuration 'x86_64-pc-win32'`), so `build.ps1` has no Android path at all.
+
+The script also drops a `libgcc.a` stub containing `INPUT(-lunwind)` into `target/` and puts it on
+the link path. NDK r23 removed libgcc in favour of libunwind, but something in the dependency graph
+still asks the linker for `-lgcc`.
 
 The build script also stages the `libEGL.dll` and `libGLESv2.dll` that mozangle produces, picking
 them out of its `OUT_DIR` after the build finishes. Surfman loads ANGLE by filename at runtime, so

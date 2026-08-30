@@ -81,7 +81,11 @@ scripts/build.ps1 -Release
 
 Android は Linux か macOS からクロスビルドする必要がある。jemalloc の `configure` が
 Windows のビルドホストを受け付けない (`Invalid configuration 'x86_64-pc-win32'`) ため、
-`build.ps1` の `-Android` は WSL か Linux 機でしか通らない。
+`build.ps1` に Android の経路は無い。
+
+スクリプトは `INPUT(-lunwind)` だけを書いた `libgcc.a` のスタブを `target/` に置き、
+リンクの探索パスに足している。NDK r23 で libgcc が廃されて libunwind に移ったが、
+依存のどれかがまだリンカに `-lgcc` を要求するため。
 
 mozangle がビルドした `libEGL.dll` / `libGLESv2.dll` も、ビルドスクリプトが
 mozangle の `OUT_DIR` から拾って配る。surfman が実行時に名前で `LoadLibrary` するので、
