@@ -44,7 +44,7 @@ Verified on Windows with the Direct3D 12 renderer.
 | macOS / Metal | IOSurface to `MTLTexture` | Written, never run |
 | Windows / Vulkan (default) | — | Falls back to CPU readback |
 | Linux / Vulkan | — | Falls back to CPU readback, verified on WSL2 |
-| Android / Compatibility | `AHardwareBuffer` to `EGLImage` to `ExternalTexture` | Written, never run |
+| Android / Compatibility | `AHardwareBuffer` to `EGLImage` to `ExternalTexture` | Builds and packages; not yet run |
 | Android / Forward+ or Mobile | — | Falls back to CPU readback |
 | Anything else | `glReadPixels` to `ImageTexture` | Verified |
 
@@ -121,6 +121,23 @@ renderer, but it takes the CPU readback path.
 The extension itself supports Godot 4.4 and later, but `project.godot` declares `4.7`, because Godot
 rewrites `config/features` to its own version whenever it opens a project. On 4.4 through 4.6 the
 demo warns about the version; the addon is unaffected.
+
+### Build an APK
+
+```sh
+# Stage the library CI built, or build it yourself with scripts/build.sh --android
+cp <artifact>/arm64-v8a/libgodot_servo.so addons/godot_servo/bin/android/arm64-v8a/
+llvm-strip --strip-all addons/godot_servo/bin/android/arm64-v8a/libgodot_servo.so
+
+godot --headless --path . --export-debug Android godot-servo.apk
+adb install -r godot-servo.apk
+```
+
+Sizes for arm64-v8a: 1474 MB debug, 170 MB release, 119 MB after `--strip-all`, giving a 146 MB
+APK. Most of that is SpiderMonkey, Stylo, WebRender, and the ICU data.
+
+`project.godot` sets the mobile renderer to `gl_compatibility`, because the AHardwareBuffer path
+needs it. On Forward+ or Mobile the extension falls back to CPU readback.
 
 ## Quickstart
 

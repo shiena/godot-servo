@@ -33,7 +33,7 @@ Windows / D3D12 で動作を確認済み。
 | macOS / Metal | IOSurface → `MTLTexture` | 実装済み・未実行 |
 | Windows / Vulkan (既定) | — | CPU リードバックに落ちる |
 | Linux / Vulkan | — | CPU リードバックに落ちる。WSL2 で確認 |
-| Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | 実装済み・未実行 |
+| Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | ビルドと APK 化まで確認。実行は未 |
 | Android / Forward+ · Mobile | — | CPU リードバックに落ちる |
 | その他 | `glReadPixels` → `ImageTexture` | 動作確認済み |
 
@@ -109,6 +109,23 @@ scripts/build.ps1 -Test                # 入力とシグナルのセルフチェ
 拡張自体は Godot 4.4 以降で動くが、`project.godot` の宣言は `4.7` になっている。
 Godot はプロジェクトを開くたびに `config/features` を自分のバージョンへ書き換えるため。
 4.4 〜 4.6 ではデモにバージョン警告が出るが、アドオン側には影響しない。
+
+### APK を作る
+
+```sh
+# CI がビルドしたものを配置する。自前で作るなら scripts/build.sh --android
+cp <artifact>/arm64-v8a/libgodot_servo.so addons/godot_servo/bin/android/arm64-v8a/
+llvm-strip --strip-all addons/godot_servo/bin/android/arm64-v8a/libgodot_servo.so
+
+godot --headless --path . --export-debug Android godot-servo.apk
+adb install -r godot-servo.apk
+```
+
+arm64-v8a のサイズ: debug 1474 MB、release 170 MB、`--strip-all` 後 119 MB、APK 146 MB。
+大半は SpiderMonkey、Stylo、WebRender、ICU のデータ。
+
+`project.godot` はモバイルのレンダラを `gl_compatibility` にしている。AHardwareBuffer の
+経路がそれを要求するため。Forward+ / Mobile では CPU リードバックに落ちる。
 
 ## 使い方
 
