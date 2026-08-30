@@ -1,0 +1,8 @@
+/target
+/demo/.godot/*
+# エディタを開かずに CLI から実行する場合、これが無いと拡張が読み込まれない。
+!/demo/.godot/extension_list.cfg
+/demo/addons/godot_servo/bin/*.dll
+/demo/addons/godot_servo/bin/*.so
+/demo/addons/godot_servo/bin/*.dylib
+*.log

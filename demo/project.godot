@@ -1,0 +1,22 @@
+; godot-servo デモプロジェクト
+;
+; Windows では GPU テクスチャ共有が D3D12 バックエンドでのみ有効なので、
+; 既定の vulkan から切り替えている。vulkan のままでも動くが、その場合は
+; CPU リードバック経路に落ちる (ServoWebView.get_backend_name() で確認できる)。
+
+config_version=5
+
+[application]
+
+config/name="godot-servo demo"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.4", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
+[rendering]
+
+rendering_device/driver.windows="d3d12"
