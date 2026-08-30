@@ -41,6 +41,18 @@ windows = { version = "0.62", features = [
 wio = "0.2"
 winapi = { version = "0.3", features = ["d3d11"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# jemalloc を dlopen 可能な TLS モデルで作らせる。
+#
+# Servo は servo-allocator 経由で jemalloc を使う。jemalloc は既定で initial-exec
+# の TLS を使うため、リンク結果に STATIC_TLS フラグが立ち、PT_TLS が glibc の
+# 静的 TLS 余剰 (既定 1664 バイト) を超える。GDExtension は dlopen されるので
+# Godot が読み込めず `cannot allocate memory in static TLS block` になる。
+#
+# ここでは使わないが、直接依存に書くと cargo が feature を合算するので、
+# servo-allocator が引く同じ jemalloc に効く。
+tikv-jemalloc-sys = { version = "0.6.1", features = ["disable_initial_exec_tls"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.1"
 objc2-metal = "0.3.2"

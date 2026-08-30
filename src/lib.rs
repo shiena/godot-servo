@@ -19,6 +19,11 @@ pub mod rendering_context;
 pub mod waker;
 pub mod webview_node;
 
+// 直接は呼ばない。Linux で jemalloc の TLS モデルを変えるためだけに依存している
+// (Cargo.toml の説明を参照)。
+#[cfg(target_os = "linux")]
+use tikv_jemalloc_sys as _;
+
 struct GodotServo;
 
 #[gdextension]

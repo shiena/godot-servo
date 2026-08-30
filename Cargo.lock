@@ -2313,6 +2313,7 @@ dependencies = [
  "rustls",
  "servo",
  "surfman",
+ "tikv-jemalloc-sys",
  "url",
  "winapi",
  "windows 0.62.2",
