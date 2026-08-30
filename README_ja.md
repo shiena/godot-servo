@@ -32,7 +32,7 @@ Windows / D3D12 で動作を確認済み。
 | Windows / D3D12 | ANGLE の D3D11 共有テクスチャ (NT ハンドル) → `ID3D12Resource` | **動作確認済み** |
 | macOS / Metal | IOSurface → `MTLTexture` | 実装済み・未実行 |
 | Windows / Vulkan (既定) | — | CPU リードバックに落ちる |
-| Linux / Vulkan | — | CPU リードバックに落ちる |
+| Linux / Vulkan | — | **ビルドは通るが、ライブラリを読み込めない** |
 | その他 | `glReadPixels` → `ImageTexture` | 動作確認済み |
 
 GPU 共有が使えない環境では自動的に CPU リードバックへ落ちる。
@@ -276,7 +276,19 @@ Vulkan ドライバは同じ判定に `|| created_from_extension` の例外を�
   `WebRenderImageHandlerType` を足す fork が要る。
 - **WebGPU**。上記のとおりプロセスが落ちる。
 - 複数 `ServoWebView` の同時利用。`Servo` 本体は共有する作りにしてあるが未検証。
-- macOS / Linux の実機確認。
+- macOS の実機確認。CI でビルドは通るが、誰も動かしていない。
+- **Linux はそもそも動かない**。ビルドは通るが Godot が `dlopen` できない。
+
+  ```
+  cannot allocate memory in static TLS block
+  ```
+
+  共有ライブラリに initial-exec な TLS 再配置が 1 つ残っていて `STATIC_TLS` フラグが立ち、
+  `PT_TLS` が 5256 バイトある。glibc の静的 TLS 余剰は既定 1664 バイトなので入らない。
+  `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=4194304` で読み込みは通るが、
+  そのあとスクリプトが動く前に segfault する。GDExtension は `dlopen` される前提なので、
+  initial-exec TLS を出している翻訳単位を特定して global-dynamic で作り直すのが筋。
+  WSL2 (Ubuntu 24.04 / Godot 4.7.2 / llvmpipe) で確認。
 
 ## ライセンス
 
