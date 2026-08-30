@@ -75,7 +75,19 @@ func _run() -> void:
 	var value := await _input_value("#name")
 	_check("ime composition -> input value", value == "日本語", "value '%s'" % value)
 
-	# 6. ホイールを転送してスクロールが動くか。
+	# 6. OS の IME と同じ順序を再現する。未確定文字列 → 空 → 確定文字のキーイベント。
+	#    以前はここで未確定分と確定分の両方が残り、二重に入っていた。
+	await _clear_input("#name")
+	browser.feed_ime_preedit("にほん")
+	await get_tree().process_frame
+	browser.feed_ime_preedit("")
+	_send_text("日本")
+	await _sleep(0.5)
+	var committed := await _input_value("#name")
+	_check("os ime sequence -> committed once", committed == "日本",
+		"value '%s'" % committed)
+
+	# 7. ホイールを転送してスクロールが動くか。
 	scrolled_before = await _scroll_position()
 	for i in 8:
 		_wheel(Vector2(VIEW_SIZE) * 0.5, -1)
@@ -103,6 +115,20 @@ func _click(point: Vector2) -> void:
 	release.button_index = MOUSE_BUTTON_LEFT
 	release.pressed = false
 	browser.feed_input(release, point)
+
+
+## 確定文字列を Windows と同じ形 (unicode 付きのキーイベント) で送る。
+func _send_text(text: String) -> void:
+	for character in text:
+		var key := InputEventKey.new()
+		key.pressed = true
+		key.unicode = character.unicode_at(0)
+		browser.feed_input(key, Vector2.ZERO)
+
+
+func _clear_input(selector: String) -> void:
+	browser.evaluate_javascript("document.querySelector('%s').value = ''" % selector)
+	await _sleep(0.3)
 
 
 ## direction が -1 なら下方向へスクロールする。

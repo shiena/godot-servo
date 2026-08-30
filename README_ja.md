@@ -160,7 +160,12 @@ browser.ime_requested.connect(func(caret: Rect2, _multiline: bool) -> void:
 
 OS の IME ではなく独自の入力 UI から変換を流し込む場合は
 `feed_ime_composition(state, text)` を使う。`state` は `"start"` / `"update"` / `"end"` で、
-`"end"` に渡した文字列が確定する。
+`"end"` に渡した文字列が確定する。`feed_ime_preedit(text)` は OS の IME と同じ経路をたどる。
+未確定文字列を渡し、次に空文字列を渡し、確定文字を `feed_input()` で送る。
+
+**既知の制限**: 変換を取り消すと未確定文字列が入力欄に残る。Servo の
+`compositionend` は data が空のとき選択を外すだけで文字を消さず、composition API に
+未確定文字列を削除する手段が無いため、送るものが無い。
 
 ### API
 

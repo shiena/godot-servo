@@ -174,7 +174,12 @@ Both demo scenes do this. Without it, candidates appear at the top-left of the w
 
 To drive composition from your own input UI instead of the OS IME, call
 `feed_ime_composition(state, text)` with `"start"`, `"update"`, or `"end"`. The text passed with
-`"end"` is what gets committed.
+`"end"` is what gets committed. `feed_ime_preedit(text)` follows the same route the OS IME takes:
+pass the preedit, then an empty string, then send the committed characters through `feed_input()`.
+
+**Known limitation.** Cancelling a conversion leaves the preedit text in the field. Servo's
+`compositionend` handler only clears the selection when the data is empty, and its composition API
+offers no way to delete the preedit, so there is nothing to send.
 
 ### API
 

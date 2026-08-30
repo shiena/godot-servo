@@ -92,6 +92,10 @@ pub struct ServoWebView {
     composing: bool,
     /// 直前の未確定文字列。変化のない通知を捨てるために持つ。
     last_preedit: GString,
+    /// 変換が終わり、確定文字列がキーイベントで届くのを待っている。
+    awaiting_commit: bool,
+    /// その確定文字列を組み立てる先。
+    pending_commit: String,
 }
 
 #[godot_api]
@@ -447,10 +451,27 @@ impl ServoWebView {
 
     /// OS の IME が持っている未確定文字列を読んで Servo に流す。
     ///
-    /// 空になったら変換の終わり。確定した文字列は別途 `InputEventKey` で届くので、
-    /// ここでは `End` を空データで送って未確定表示を消すだけにする。
+    /// 未確定文字列が空になったら変換の終わりだが、ここで `End` を送ってはいけない。
+    /// Servo の `compositionend` は `data` に確定文字列が載っている前提で、空だと
+    /// 選択を外すだけで未確定文字列を消さない (`text_input.rs` の
+    /// `handle_compositionend`)。そのまま確定文字列をキーイベントで入れると、
+    /// 未確定分と確定分の両方が残って二重になる。
+    ///
+    /// Godot の `ime_get_text()` は `GCS_COMPSTR` しか返さず確定文字列を持たない
+    /// ので、確定文字列は後続のキーイベントから組み立てて `End` に載せる。
+    /// 実際の送信は `flush_commit()` で行う。
     fn sync_preedit(&mut self) {
         let preedit = DisplayServer::singleton().ime_get_text();
+        self.feed_ime_preedit(preedit);
+    }
+
+    /// 未確定文字列を差し替える。
+    ///
+    /// OS の IME からは `sync_preedit()` が呼ぶ。独自の入力 UI を作る場合は
+    /// ここへ直接流し込み、空文字列を渡してから確定文字を `feed_input()` で
+    /// 送れば、OS の IME と同じ経路をたどる。
+    #[func]
+    fn feed_ime_preedit(&mut self, preedit: GString) {
         if preedit == self.last_preedit {
             return;
         }
@@ -459,7 +480,7 @@ impl ServoWebView {
         if preedit.is_empty() {
             if self.composing {
                 self.composing = false;
-                self.send_composition(CompositionState::End, String::new());
+                self.awaiting_commit = true;
             }
             return;
         }
@@ -471,6 +492,24 @@ impl ServoWebView {
             CompositionState::Start
         };
         self.send_composition(state, preedit.to_string());
+    }
+
+    /// 変換終了後に集めた確定文字列を `End` として送る。
+    ///
+    /// Windows は「未確定が空になった通知」→「確定文字列の `WM_CHAR`」の順で寄こし、
+    /// Godot は前者を通知、後者をキーイベントとして同じフレーム内に配る。したがって
+    /// `_process` の時点では確定文字列は出そろっている。
+    ///
+    /// 変換を取り消した場合は空のまま届く。その場合 Servo は未確定文字列を消さずに
+    /// 残す (上記のとおり `clear_selection()` は選択を外すだけ) が、こちらから消す
+    /// 手段が composition API に無いため、現状はそのままにしている。
+    fn flush_commit(&mut self) {
+        if !self.awaiting_commit {
+            return;
+        }
+        self.awaiting_commit = false;
+        let commit = std::mem::take(&mut self.pending_commit);
+        self.send_composition(CompositionState::End, commit);
     }
 
     fn set_ime_enabled(&mut self, enabled: bool) {
@@ -494,7 +533,9 @@ impl ServoWebView {
 
         if !enabled {
             self.composing = false;
+            self.awaiting_commit = false;
             self.last_preedit = GString::new();
+            self.pending_commit.clear();
         }
     }
 
@@ -570,7 +611,7 @@ impl ServoWebView {
             )));
     }
 
-    fn feed_key(&self, event: &Gd<InputEventKey>) {
+    fn feed_key(&mut self, event: &Gd<InputEventKey>) {
         let Some(inner) = self.inner.as_ref() else {
             return;
         };
@@ -599,6 +640,15 @@ impl ServoWebView {
             return;
         };
 
+        // 変換直後に届く文字は確定文字列。キーとして送ると二重に入るので、
+        // ここでは溜めるだけにして `flush_commit()` が `End` に載せる。
+        if self.awaiting_commit {
+            if let (true, Key::Character(text)) = (event.is_pressed(), &key) {
+                self.pending_commit.push_str(text);
+                return;
+            }
+        }
+
         inner.webview.notify_input_event(ServoInputEvent::Keyboard(
             KeyboardEvent::new_without_event(
                 state,
@@ -614,6 +664,13 @@ impl ServoWebView {
 
     /// 毎フレームの処理。Servo を回し、必要なら描き直し、溜まった通知を emit する。
     fn pump(&mut self) {
+        if self.inner.is_none() {
+            return;
+        }
+        // 入力処理はこのフレームの `_process` より前に終わっているので、確定文字列は
+        // ここで出そろっている。
+        self.flush_commit();
+
         let Some(inner) = self.inner.as_ref() else {
             return;
         };
