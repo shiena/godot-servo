@@ -32,7 +32,7 @@ everywhere.
 | --- | --- | --- |
 | Windows / D3D12 | ANGLE D3D11 shared texture (NT handle) to `ID3D12Resource` | Verified |
 | Android / Compatibility | `AHardwareBuffer` to `EGLImage` to `ExternalTexture` | Verified |
-| macOS / Metal | IOSurface to `MTLTexture` | Builds; not yet run |
+| macOS / Metal | IOSurface to `MTLTexture` | Verified |
 | Windows / Vulkan | CPU readback | Verified |
 | Linux / Vulkan | CPU readback | Verified |
 | Android / Forward+ or Mobile | CPU readback | Verified |

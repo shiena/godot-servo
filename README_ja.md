@@ -29,7 +29,7 @@ Godot 4 に組み込み、描画結果を **GPU テクスチャのまま** Godot
 | --- | --- | --- |
 | Windows / D3D12 | ANGLE の D3D11 共有テクスチャ (NT ハンドル) → `ID3D12Resource` | 確認済み |
 | Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | 確認済み |
-| macOS / Metal | IOSurface → `MTLTexture` | ビルドのみ、未実行 |
+| macOS / Metal | IOSurface → `MTLTexture` | 確認済み |
 | Windows / Vulkan | CPU 読み戻し | 確認済み |
 | Linux / Vulkan | CPU 読み戻し | 確認済み |
 | Android / Forward+ · Mobile | CPU 読み戻し | 確認済み |

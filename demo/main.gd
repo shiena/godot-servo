@@ -90,7 +90,8 @@ func _build_environment() -> void:
 		add_child(box)
 
 	var camera := Camera3D.new()
-	camera.position = Vector3(0.0, 0.0, 1.9)
+	# 板 (1.92 x 1.08 m) がだいたい画面いっぱいに映る距離。
+	camera.position = Vector3(0.0, 0.0, 1.0)
 	add_child(camera)
 	self.camera = camera
 
