@@ -15,6 +15,7 @@ use godot::prelude::*;
 pub mod angle_loader;
 pub mod bridge;
 pub mod delegate;
+pub mod gl_guard;
 pub mod rendering_context;
 pub mod waker;
 pub mod webview_node;

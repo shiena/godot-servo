@@ -23,6 +23,7 @@ use servo::{
 
 use crate::bridge::{self, TextureBridge};
 use crate::delegate::{ServoEvent, ServoEventSink, BRIDGE_SCRIPT};
+use crate::gl_guard::HostContext;
 use crate::rendering_context::GodotRenderingContext;
 use crate::waker::GodotWaker;
 
@@ -184,6 +185,10 @@ impl ServoWebView {
 
         // surfman が ANGLE を掴む前に、拡張と同じフォルダから読み込ませておく。
         crate::angle_loader::preload();
+
+        // ここから先で Servo の GL コンテキストをカレントにする。抜けるときに
+        // Godot のものへ戻す (Android の Compatibility レンダラで必須)。
+        let _host_context = HostContext::capture();
 
         let context = match GodotRenderingContext::new(size) {
             Ok(context) => Rc::new(context),
@@ -663,6 +668,10 @@ impl ServoWebView {
         let Some(inner) = self.inner.as_ref() else {
             return;
         };
+
+        // Servo に GL コンテキストを貸す間だけ。抜けるときに Godot へ返す。
+        // `spin_event_loop()` も GL に触るので、その前に控える。
+        let _host_context = HostContext::capture();
 
         // Servo は自前のスレッドから起こしてくるので、その要求を取りこぼさない。
         inner.waker.take_pending();

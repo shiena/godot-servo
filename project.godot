@@ -25,8 +25,7 @@ window/size/viewport_height=720
 
 [rendering]
 
-; gl_compatibility にすると AHardwareBuffer の共有経路に入るが、Beam Pro では
-; Godot の描画中に SIGSEGV する (README の Android の節を参照)。既定は CPU 経路。
-renderer/rendering_method.mobile="mobile"
+; Android の AHardwareBuffer 共有経路は Compatibility レンダラでのみ成立する。
+renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 rendering_device/driver.windows="d3d12"
