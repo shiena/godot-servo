@@ -64,12 +64,20 @@ if (-not (Test-Path $built)) { Die "Build artifact not found: $built" }
 New-Item -ItemType Directory -Force $binDir | Out-Null
 Copy-Item -Force $built (Join-Path $binDir 'godot_servo.x86_64.dll')
 
-# ANGLE。build.rs が mozangle の OUT_DIR から target/<profile>/ へ写している。
-# これが無いと surfman の LoadLibrary が失敗して Servo が起動しない。
+# ANGLE。mozangle が自分の OUT_DIR に置いたものを拾う。これが無いと surfman の
+# LoadLibrary が失敗して Servo が起動しない。
+#
+# 以前は build.rs でコピーしていたが、cargo は自クレートの build.rs と依存クレートの
+# build.rs の実行順を保証しない。ローカルでは mozangle が先にビルド済みだったので
+# 通っていただけで、CI のクリーンビルドでは DLL がまだ存在しなかった。
+# cargo build の完了後に探せば順序の問題は起きない。
+$angleDir = Get-ChildItem (Join-Path $target 'build') -Directory -Filter 'mozangle-*' -ErrorAction SilentlyContinue |
+    ForEach-Object { Join-Path $_.FullName 'out' } |
+    Where-Object { Test-Path (Join-Path $_ 'libEGL.dll') } |
+    Select-Object -First 1
+if (-not $angleDir) { Die "libEGL.dll not found under $targetuild\mozangle-*/out (did the build finish?)" }
 foreach ($dll in 'libEGL.dll', 'libGLESv2.dll') {
-    $source = Join-Path $target $dll
-    if (-not (Test-Path $source)) { Die "$dll not found in $target (build.rs should have copied it from mozangle)" }
-    Copy-Item -Force $source (Join-Path $binDir $dll)
+    Copy-Item -Force (Join-Path $angleDir $dll) (Join-Path $binDir $dll)
 }
 
 Ok "Placed: $binDir"

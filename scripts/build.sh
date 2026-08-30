@@ -61,10 +61,11 @@ if [ "$do_checks" = 1 ]; then
 	say 'cargo fmt --check'
 	cargo fmt --check || die 'cargo fmt --check failed (run `cargo fmt`)'
 	say 'cargo clippy'
+	# 警告はエラー扱い。CI がこのフラグで回るので、ここを緩めると門番が消える。
 	if [ "$profile" = release ]; then
-		cargo clippy --all-targets --release || die 'cargo clippy failed'
+		cargo clippy --all-targets --release -- -D warnings || die 'cargo clippy failed'
 	else
-		cargo clippy --all-targets || die 'cargo clippy failed'
+		cargo clippy --all-targets -- -D warnings || die 'cargo clippy failed'
 	fi
 fi
 

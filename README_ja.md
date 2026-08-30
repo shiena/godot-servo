@@ -75,10 +75,11 @@ scripts/build.ps1 -Release
 ./scripts/build.sh --release
 ```
 
-`build.rs` が mozangle のビルドした `libEGL.dll` / `libGLESv2.dll` を
-`target/<profile>/` へ写し、ビルドスクリプトがそれを `addons/godot_servo/bin/windows/`
-へ配る。surfman が実行時に名前で `LoadLibrary` するので、この 2 つは拡張の DLL と
-同じフォルダに要る (`src/angle_loader.rs` が絶対パスで先読みする)。
+mozangle がビルドした `libEGL.dll` / `libGLESv2.dll` も、ビルドスクリプトが
+mozangle の `OUT_DIR` から拾って配る。surfman が実行時に名前で `LoadLibrary` するので、
+この 2 つは拡張の DLL と同じフォルダに要る (`src/angle_loader.rs` が絶対パスで先読みする)。
+
+素の `cargo build` は何も配置しない。ビルドスクリプト経由で使うこと。
 
 ## デモ
 

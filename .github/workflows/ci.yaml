@@ -10,21 +10,16 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: Format and lint
-    runs-on: windows-latest
+  # 書式だけは依存をビルドせずに見られるので、速い足を分けておく。
+  format:
+    name: Format
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
-
-      - uses: Swatinem/rust-cache@v2
-
+          components: rustfmt
       - run: cargo fmt --check
-
-      - run: cargo clippy --all-targets -- -D warnings
 
   windows:
     name: Build and self check (Windows)
@@ -33,27 +28,31 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build and stage the addon
+      # clippy とビルドを 1 回の呼び出しにまとめ、同じ debug プロファイルで回す。
+      # Servo のビルドはキャッシュが冷えていると 1 時間を超えるので、CI で
+      # release と debug の両方を積むのは避ける。release はリリース時だけ。
+      - name: Lint, build, and stage the addon
         shell: pwsh
-        run: ./scripts/build.ps1 -Release
+        run: ./scripts/build.ps1 -Checks
 
-      # 実機と同じ経路 (D3D12 の GPU テクスチャ共有) を踏めるかは GitHub の
-      # ランナー次第。GPU が無ければ CPU リードバックに落ちるが、入力とシグナルの
-      # 検証はどちらでも通る。
       - name: Set up Godot
         uses: chickensoft-games/setup-godot@v2
         with:
           version: 4.7.2
           use-dotnet: false
 
+      # ランナーに GPU が無ければ CPU リードバック経路に落ちる。入力とシグナルの
+      # 検証はどちらの経路でも通る。
       - name: Self check
         shell: pwsh
         run: |
           godot --headless --path . --import
-          ./scripts/build.ps1 -NoBuild -Release -Test -Godot godot
+          ./scripts/build.ps1 -NoBuild -Test -Godot godot
 
       - uses: actions/upload-artifact@v4
         with:
@@ -85,7 +84,7 @@ jobs:
             libssl-dev libdbus-1-dev libudev-dev
 
       - name: Build and stage the addon
-        run: ./scripts/build.sh --release
+        run: ./scripts/build.sh
 
       - uses: actions/upload-artifact@v4
         with:

@@ -88,10 +88,11 @@ scripts/build.ps1 -Release
 ./scripts/build.sh --release
 ```
 
-`build.rs` copies the `libEGL.dll` and `libGLESv2.dll` that mozangle builds into
-`target/<profile>/`, and the build script stages them into `addons/godot_servo/bin/windows/`.
-Surfman loads ANGLE by filename at runtime, so both DLLs have to sit beside the extension.
-`src/angle_loader.rs` preloads them by absolute path.
+The build script also stages the `libEGL.dll` and `libGLESv2.dll` that mozangle produces, picking
+them out of its `OUT_DIR` after the build finishes. Surfman loads ANGLE by filename at runtime, so
+both DLLs have to sit beside the extension; `src/angle_loader.rs` preloads them by absolute path.
+
+Plain `cargo build` doesn't stage anything. Use the build script.
 
 ## Run the demo
 

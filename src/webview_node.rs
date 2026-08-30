@@ -722,7 +722,7 @@ fn godot_key_to_servo(event: &Gd<InputEventKey>) -> Option<Key> {
         _ => {
             // 印字可能な文字はそのまま渡す。
             let unicode = event.get_unicode();
-            let character = char::from_u32(unicode as u32).filter(|c| !c.is_control())?;
+            let character = char::from_u32(unicode).filter(|c| !c.is_control())?;
             return Some(Key::Character(character.to_string()));
         }
     };
