@@ -48,13 +48,21 @@ func _local_page_url() -> String:
 
 
 ## TextureRect のローカル座標を WebView のピクセル座標に直して渡す。
+## マウスとタッチの両方を通す。重複する疑似イベントは拡張側で落としている。
 func _on_view_input(event: InputEvent) -> void:
 	if browser == null:
 		return
-	if not (event is InputEventMouse):
+
+	var local: Vector2
+	if event is InputEventMouse:
+		local = (event as InputEventMouse).position
+	elif event is InputEventScreenTouch:
+		local = (event as InputEventScreenTouch).position
+	elif event is InputEventScreenDrag:
+		local = (event as InputEventScreenDrag).position
+	else:
 		return
 
-	var local: Vector2 = (event as InputEventMouse).position
 	var scale := Vector2(VIEW_SIZE) / view.size
 	browser.feed_input(event, local * scale)
 

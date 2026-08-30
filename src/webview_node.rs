@@ -10,15 +10,16 @@ use dpi::PhysicalSize;
 use godot::classes::notify::NodeNotification;
 use godot::classes::{
     DisplayServer, INode, InputEvent, InputEventKey, InputEventMouseButton, InputEventMouseMotion,
-    Node, Texture2D,
+    InputEventScreenDrag, InputEventScreenTouch, Node, Texture2D,
 };
 use godot::global::{Key as GodotKey, MouseButton as GodotMouseButton};
 use godot::prelude::*;
 use servo::{
     Code, CompositionEvent, CompositionState, DevicePoint, ImeEvent, InputEvent as ServoInputEvent,
     JSValue, Key, KeyState, KeyboardEvent, Location, Modifiers, MouseButton, MouseButtonAction,
-    MouseButtonEvent, MouseMoveEvent, PrefValue, Servo, ServoBuilder, UserContentManager,
-    UserScript, WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode,
+    MouseButtonEvent, MouseMoveEvent, PrefValue, Servo, ServoBuilder, TouchEvent, TouchEventType,
+    TouchId, TouchPointerType, UserContentManager, UserScript, WebView, WebViewBuilder, WheelDelta,
+    WheelEvent, WheelMode,
 };
 
 use crate::bridge::{self, TextureBridge};
@@ -29,6 +30,10 @@ use crate::waker::GodotWaker;
 
 /// ホイール 1 ノッチあたりのピクセル数。servoshell の値に合わせている。
 const WHEEL_LINE_HEIGHT: f64 = 76.0;
+
+/// Godot が入力を変換して作った疑似イベントに入る `device`。
+/// `InputEvent::DEVICE_ID_EMULATION` は GDExtension に出ていないので直接書く。
+const DEVICE_ID_EMULATION: i32 = -1;
 
 struct Inner {
     servo: Servo,
@@ -371,12 +376,38 @@ impl ServoWebView {
     /// `position` は WebView 内のピクセル座標。`TextureRect` なら
     /// `event.position - texture_rect.global_position`、3D パネルなら
     /// レイキャストで得た UV に解像度を掛けたものを渡す。
+    ///
+    /// マウスとタッチの両方を受け付ける。Godot は
+    /// `input_devices/pointing/emulate_mouse_from_touch` (既定で有効) によって
+    /// タッチから疑似マウスイベントも作るので、そのまま両方を流すと 1 回の操作が
+    /// 二重に届く。疑似イベントは `device` が `DEVICE_ID_EMULATION` になるので、
+    /// ここで落とす。`emulate_touch_from_mouse` の逆向きも同じ規則で除ける。
     #[func]
     fn feed_input(&mut self, event: Gd<InputEvent>, position: Vector2) {
         let Some(inner) = self.inner.as_ref() else {
             return;
         };
+        if event.get_device() == DEVICE_ID_EMULATION {
+            return;
+        }
         let point = DevicePoint::new(position.x, position.y);
+
+        if let Ok(touch) = event.clone().try_cast::<InputEventScreenTouch>() {
+            let phase = if touch.is_pressed() {
+                TouchEventType::Down
+            } else if touch.is_canceled() {
+                TouchEventType::Cancel
+            } else {
+                TouchEventType::Up
+            };
+            self.feed_touch(phase, touch.get_index(), point);
+            return;
+        }
+
+        if let Ok(drag) = event.clone().try_cast::<InputEventScreenDrag>() {
+            self.feed_touch(TouchEventType::Move, drag.get_index(), point);
+            return;
+        }
 
         if let Ok(motion) = event.clone().try_cast::<InputEventMouseMotion>() {
             let _ = motion;
@@ -549,6 +580,24 @@ impl ServoWebView {
             self.view_size.x.max(1) as u32,
             self.view_size.y.max(1) as u32,
         )
+    }
+
+    /// タッチ点 1 つ分を Servo に渡す。
+    ///
+    /// スクロールもフリックもピンチも Servo 側のタッチハンドラが面倒を見るので、
+    /// ここでやることは指の上げ下げと移動をそのまま伝えることだけ。
+    fn feed_touch(&self, phase: TouchEventType, index: i32, point: DevicePoint) {
+        let Some(inner) = self.inner.as_ref() else {
+            return;
+        };
+        inner
+            .webview
+            .notify_input_event(ServoInputEvent::Touch(TouchEvent::new(
+                phase,
+                TouchId(index),
+                point.into(),
+                TouchPointerType::Touch,
+            )));
     }
 
     fn feed_mouse_button(&self, event: &Gd<InputEventMouseButton>, point: DevicePoint) {

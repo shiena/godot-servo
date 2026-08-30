@@ -2,8 +2,8 @@ extends Node
 ## 入力転送とシグナルのセルフチェック。
 ##
 ## 実ページの中からボタンの座標を JavaScript で問い合わせ、そこへ合成した
-## マウスイベントを送り、`bridge_event` が返ってくるかを見る。ホイールを送って
-## スクロールが効いているかも確認する。
+## マウス・タッチイベントを送り、`bridge_event` が返ってくるかを見る。ホイールと
+## 指のドラッグでスクロールが効いているかも確認する。
 ##
 ##     Godot --path demo --quit-after 900 -- --scene autotest
 ##
@@ -57,14 +57,27 @@ func _run() -> void:
 	_click(button_point)
 	await _expect("click -> onclick -> bridge_event", "buy", 8.0)
 
-	# 4. テキスト欄をクリックすると Servo が IME を要求してくるか。
+	# 4. タップを転送して、クリックと同じように onclick が動くか。
+	_touch_tap(button_point)
+	await _expect("touch tap -> onclick -> bridge_event", "buy", 8.0)
+
+	# 5. 指のドラッグでスクロールするか。慣性が乗るので落ち着くまで待つ。
+	var touch_before := await _scroll_position()
+	await _touch_drag(Vector2(VIEW_SIZE) * Vector2(0.5, 0.8), Vector2(VIEW_SIZE) * Vector2(0.5, 0.3))
+	await _sleep(1.5)
+	var touch_after := await _scroll_position()
+	_check("touch drag -> scroll", touch_after > touch_before + 1.0,
+		"scrollTop %.0f -> %.0f" % [touch_before, touch_after])
+	await _scroll_to_top()
+
+	# 6. テキスト欄をクリックすると Servo が IME を要求してくるか。
 	var input_point := await _element_center("#name")
 	print("  -> click input at ", input_point)
 	_click(input_point)
 	var requested := await _wait_for(func() -> bool: return ime_caret != Rect2(), 8.0)
 	_check("focus input -> ime_requested", requested, "caret %s" % ime_caret)
 
-	# 5. 未確定文字列を送り込んで、確定した文字が入力欄に入るか。
+	# 7. 未確定文字列を送り込んで、確定した文字が入力欄に入るか。
 	browser.feed_ime_composition("start", "に")
 	await get_tree().process_frame
 	browser.feed_ime_composition("update", "にほん")
@@ -74,8 +87,8 @@ func _run() -> void:
 	var value := await _input_value("#name")
 	_check("ime composition -> input value", value == "日本語", "value '%s'" % value)
 
-	# 6. OS の IME と同じ順序を再現する。未確定文字列 → 空 → 確定文字のキーイベント。
-	#    以前はここで未確定分と確定分の両方が残り、二重に入っていた。
+	# 8. OS の IME と同じ順序を再現する。未確定文字列 → 空 → 確定文字のキーイベント。
+	#    未確定分が残って二重に入らないことを見る。
 	await _clear_input("#name")
 	browser.feed_ime_preedit("にほん")
 	await get_tree().process_frame
@@ -86,7 +99,7 @@ func _run() -> void:
 	_check("os ime sequence -> committed once", committed == "日本",
 		"value '%s'" % committed)
 
-	# 7. ホイールを転送してスクロールが動くか。
+	# 9. ホイールを転送してスクロールが動くか。
 	scrolled_before = await _scroll_position()
 	for i in 8:
 		_wheel(Vector2(VIEW_SIZE) * 0.5, -1)
@@ -114,6 +127,49 @@ func _click(point: Vector2) -> void:
 	release.button_index = MOUSE_BUTTON_LEFT
 	release.pressed = false
 	browser.feed_input(release, point)
+
+
+## 指 1 本で軽く触って離す。
+func _touch_tap(point: Vector2) -> void:
+	var press := InputEventScreenTouch.new()
+	press.index = 0
+	press.pressed = true
+	browser.feed_input(press, point)
+
+	var release := InputEventScreenTouch.new()
+	release.index = 0
+	release.pressed = false
+	browser.feed_input(release, point)
+
+
+## 指 1 本で `from` から `to` までなぞる。
+##
+## Servo のタッチハンドラは 10 px 動くまでパンに切り替わらないので、
+## 途中経過を刻んで送る。離したあとは慣性が乗る。
+func _touch_drag(from: Vector2, to: Vector2, steps: int = 10) -> void:
+	var press := InputEventScreenTouch.new()
+	press.index = 0
+	press.pressed = true
+	browser.feed_input(press, from)
+	await get_tree().process_frame
+
+	for i in range(1, steps + 1):
+		var point := from.lerp(to, float(i) / float(steps))
+		var drag := InputEventScreenDrag.new()
+		drag.index = 0
+		browser.feed_input(drag, point)
+		await get_tree().process_frame
+
+	var release := InputEventScreenTouch.new()
+	release.index = 0
+	release.pressed = false
+	browser.feed_input(release, to)
+
+
+## 慣性が残ったまま次の検査に入らないよう、スクロール位置を戻す。
+func _scroll_to_top() -> void:
+	browser.evaluate_javascript("document.querySelector('main').scrollTop = 0")
+	await _sleep(0.3)
 
 
 ## 確定文字列を Windows と同じ形 (unicode 付きのキーイベント) で送る。

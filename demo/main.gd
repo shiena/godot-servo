@@ -148,14 +148,16 @@ func _set_hud(text: String) -> void:
 
 # ── 入力の転送 ────────────────────────────────────────────────────────────
 
-## 板の上でのマウス操作を WebView のピクセル座標に直して渡す。
+## 板の上でのマウス・タッチ操作を WebView のピクセル座標に直して渡す。
 func _on_panel_input(_camera: Node, event: InputEvent, position: Vector3, _normal: Vector3, _shape: int) -> void:
 	if browser == null:
 		return
 
 	last_point = _world_to_view_pixels(position)
 
-	if event is InputEventMouseMotion or event is InputEventMouseButton:
+	# タッチも一緒に渡す。疑似マウスイベントとの重複は拡張側で落としている。
+	if event is InputEventMouseMotion or event is InputEventMouseButton \
+			or event is InputEventScreenTouch or event is InputEventScreenDrag:
 		browser.feed_input(event, last_point)
 
 
