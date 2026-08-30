@@ -55,13 +55,18 @@ jobs:
           version: 4.7.2
           use-dotnet: false
 
+      # インポートを分けておく。まとめると、どちらで止まったのか分からない。
+      - name: Import the project
+        shell: pwsh
+        timeout-minutes: 10
+        run: godot --headless --path . --import
+
       # ランナーに GPU が無ければ CPU リードバック経路に落ちる。入力とシグナルの
       # 検証はどちらの経路でも通る。
       - name: Self check
         shell: pwsh
-        run: |
-          godot --headless --path . --import
-          ./scripts/build.ps1 -NoBuild -Test -Godot godot
+        timeout-minutes: 10
+        run: ./scripts/build.ps1 -NoBuild -Test -Godot godot -TimeoutSeconds 300
 
       - uses: actions/upload-artifact@v4
         with:

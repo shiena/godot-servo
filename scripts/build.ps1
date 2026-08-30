@@ -24,6 +24,7 @@ param(
     [string]$Page,
     [string]$Screenshot,
     [int]$QuitAfter = 0,
+    [int]$TimeoutSeconds = 0,
     [string]$Godot = $(if ($env:GODOT) { $env:GODOT } else { 'godot' })
 )
 
@@ -110,13 +111,32 @@ if ($Run -or $Test) {
     # .NET の API なら 5.1 でも 7 でも同じように使える。
     $stdout = [System.IO.Path]::GetTempFileName()
     $stderr = [System.IO.Path]::GetTempFileName()
+
+    # セルフチェックは自分で終了するはずのもの。固まったら待ち続けず、そこまでの
+    # 出力を見せて落とす。CI では実行ステップの出力が終了時にまとめて流れるので、
+    # 待ち続けると何が起きたのか一切分からない。
+    $limit = if ($TimeoutSeconds -gt 0) { $TimeoutSeconds } elseif ($Test) { 300 } else { 0 }
+
     try {
-        $process = Start-Process -FilePath $Godot -PassThru -NoNewWindow -Wait `
+        $process = Start-Process -FilePath $Godot -PassThru -NoNewWindow `
             -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
             -ArgumentList ($godotArgs | ForEach-Object { '"{0}"' -f $_ })
+
+        $exited = $true
+        if ($limit -gt 0) {
+            $exited = $process.WaitForExit($limit * 1000)
+            if (-not $exited) {
+                $process.Kill()
+                $process.WaitForExit()
+            }
+        } else {
+            $process.WaitForExit()
+        }
+
         # 明示しないと 5.1 が ANSI で読み、日本語の出力が化ける。
         Get-Content $stdout -Encoding UTF8 -ErrorAction SilentlyContinue | Write-Host
         Get-Content $stderr -Encoding UTF8 -ErrorAction SilentlyContinue | Write-Host
+        if (-not $exited) { Die "Godot did not exit within $limit s" }
         if ($process.ExitCode -ne 0) { Die "Godot exited with $($process.ExitCode)" }
     } finally {
         Remove-Item $stdout, $stderr -Force -ErrorAction SilentlyContinue
