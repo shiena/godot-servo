@@ -88,7 +88,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxext-dev libgl1-mesa-dev \
-            libssl-dev libdbus-1-dev libudev-dev
+            libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
 
       - name: Build and stage the addon
         run: ./scripts/build.sh
