@@ -284,4 +284,9 @@ driver has no such restriction, so that path passes the texture directly.
 
 ## License
 
-Servo is MPL-2.0.
+Licensed under either of [Apache License 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option.
+
+Servo itself is MPL-2.0. This crate depends on it without modifying it, so the file-level copyleft
+does not reach your own code. The three.js builds vendored under `demo/web/vendor/` are MIT and
+carry their original license headers.

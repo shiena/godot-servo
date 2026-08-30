@@ -274,4 +274,9 @@ Vulkan ドライバは同じ判定に `|| created_from_extension` の例外を�
 
 ## ライセンス
 
-Servo は MPL-2.0。
+[Apache License 2.0](LICENSE-APACHE) と [MIT ライセンス](LICENSE-MIT) のデュアル。
+どちらを選んでもよい。
+
+Servo 自体は MPL-2.0 だが、この crate は改変せずに依存しているだけなので、
+ファイル単位のコピーレフトは利用側のコードには及ばない。`demo/web/vendor/` に
+置いている three.js のビルドは MIT で、元のライセンスヘッダをそのまま保持している。

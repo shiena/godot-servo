@@ -221,6 +221,13 @@ var _url := ""
 var _last_event := "(まだ届いていない)"
 
 
+## file:// はローカルの絶対パスがそのまま出てしまうので、ファイル名だけにする。
+func _short_url(url: String) -> String:
+	if url.begins_with("file://"):
+		return url.get_file()
+	return url
+
+
 func _refresh_hud(title: String, url: String) -> void:
 	if title != "":
 		_title = title
@@ -228,7 +235,7 @@ func _refresh_hud(title: String, url: String) -> void:
 		_url = url
 	_set_hud("[b]%s[/b]  —  %s\n経路: %s\n直近のイベント: %s" % [
 		_title,
-		_url,
+		_short_url(_url),
 		browser.get_backend_name() if browser != null else "?",
 		_last_event,
 	])
