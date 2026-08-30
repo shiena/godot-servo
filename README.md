@@ -301,6 +301,22 @@ driver has no such restriction, so that path passes the texture directly.
   find the translation unit emitting initial-exec TLS and rebuild it as global-dynamic.
   Verified on WSL2 (Ubuntu 24.04, Godot 4.7.2, llvmpipe).
 
+## Related projects
+
+Two other addons embed Servo in Godot. Both render through
+`SoftwareRenderingContext` and `read_to_image()`, which is the same CPU readback this project
+falls back to when GPU sharing is unavailable.
+
+| | Rendering | License |
+| --- | --- | --- |
+| [Decapitated/Godot-Servo](https://github.com/Decapitated/Godot-Servo) | CPU readback | LGPL-3.0 |
+| [emanuelbertey/web-servo-godot](https://github.com/emanuelbertey/web-servo-godot) | CPU readback | none stated |
+| this project | GPU shared texture, CPU fallback | MIT / Apache-2.0 |
+
+If you don't need the GPU path, `web-servo-godot` covers more ground today: more signals, a
+JavaScript API, and working Linux and Android builds. Note it states no license, so it is
+all-rights-reserved by default.
+
 ## License
 
 Licensed under either of [Apache License 2.0](LICENSE-APACHE) or

@@ -290,6 +290,22 @@ Vulkan ドライバは同じ判定に `|| created_from_extension` の例外を�
   initial-exec TLS を出している翻訳単位を特定して global-dynamic で作り直すのが筋。
   WSL2 (Ubuntu 24.04 / Godot 4.7.2 / llvmpipe) で確認。
 
+## 関連プロジェクト
+
+Servo を Godot に組み込むアドオンは他に 2 つある。どちらも `SoftwareRenderingContext` と
+`read_to_image()` で描画していて、これは GPU 共有が使えないときにこのプロジェクトが落ちる
+CPU リードバックと同じ経路にあたる。
+
+| | 描画 | ライセンス |
+|---|---|---|
+| [Decapitated/Godot-Servo](https://github.com/Decapitated/Godot-Servo) | CPU リードバック | LGPL-3.0 |
+| [emanuelbertey/web-servo-godot](https://github.com/emanuelbertey/web-servo-godot) | CPU リードバック | 表記なし |
+| これ | GPU 共有テクスチャ、不可なら CPU | MIT / Apache-2.0 |
+
+GPU 経路が要らないなら、現時点では `web-servo-godot` のほうが守備範囲が広い。シグナルが多く、
+JavaScript の API があり、Linux と Android が動いている。ただしライセンス表記が無いので、
+既定では全権利留保である点に注意。
+
 ## ライセンス
 
 [Apache License 2.0](LICENSE-APACHE) と [MIT ライセンス](LICENSE-MIT) のデュアル。
