@@ -99,6 +99,19 @@ if [ "$do_build" = 1 ]; then
 		echo 'INPUT(-lunwind)' > "$gcc_stub/libgcc.a"
 		export RUSTFLAGS="${RUSTFLAGS:-} -L $gcc_stub"
 
+		# bindgen が libclang を要求する。ディストリの clang が入っていない環境でも
+		# NDK が同梱しているものを使えるので、見つかったらそれを指す。
+		if [ -z "${LIBCLANG_PATH:-}" ]; then
+			for candidate in "${ANDROID_NDK_HOME:-}"/toolchains/llvm/prebuilt/*/lib \
+			                 "${ANDROID_NDK_HOME:-}"/toolchains/llvm/prebuilt/*/musl/lib; do
+				if [ -e "$candidate/libclang.so" ]; then
+					export LIBCLANG_PATH="$candidate"
+					say "LIBCLANG_PATH=$LIBCLANG_PATH"
+					break
+				fi
+			done
+		fi
+
 		# cargo-ndk と ANDROID_NDK_HOME が要る。
 		say "cargo ndk -t $abi build ($profile)"
 		if [ "$profile" = release ]; then
