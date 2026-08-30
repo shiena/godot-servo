@@ -31,7 +31,12 @@ jobs:
         with:
           components: clippy
 
+      # 失敗時もキャッシュを保存する。既定は false だが、この構成では落ちるのは
+      # 自分のコードかスクリプトで、Servo と ANGLE のビルドはその手前で終わって
+      # いる。保存しないと失敗が続く限り毎回 1 時間かけて作り直すことになる。
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
       # clippy とビルドを 1 回の呼び出しにまとめ、同じ debug プロファイルで回す。
       # Servo のビルドはキャッシュが冷えていると 1 時間を超えるので、CI で
@@ -75,6 +80,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'

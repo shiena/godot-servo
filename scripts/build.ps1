@@ -71,9 +71,12 @@ Copy-Item -Force $built (Join-Path $binDir 'godot_servo.x86_64.dll')
 # build.rs の実行順を保証しない。ローカルでは mozangle が先にビルド済みだったので
 # 通っていただけで、CI のクリーンビルドでは DLL がまだ存在しなかった。
 # cargo build の完了後に探せば順序の問題は起きない。
+# feature を変えると cargo は別の fingerprint で mozangle を作り直すので、
+# mozangle-* が複数残る。古いものを掴まないよう新しい順に見る。
 $angleDir = Get-ChildItem (Join-Path $target 'build') -Directory -Filter 'mozangle-*' -ErrorAction SilentlyContinue |
     ForEach-Object { Join-Path $_.FullName 'out' } |
     Where-Object { Test-Path (Join-Path $_ 'libEGL.dll') } |
+    Sort-Object { (Get-Item (Join-Path $_ 'libEGL.dll')).LastWriteTime } -Descending |
     Select-Object -First 1
 if (-not $angleDir) { Die "libEGL.dll not found under $targetuild\mozangle-*/out (did the build finish?)" }
 foreach ($dll in 'libEGL.dll', 'libGLESv2.dll') {
