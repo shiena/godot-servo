@@ -223,7 +223,7 @@ impl ServoWebView {
         webview.focus();
         webview.show();
 
-        let bridge = bridge::create(&context, size);
+        let bridge = bridge::create(&context, size, &_host_context);
         godot_print!(
             "godot-servo: started with the '{}' texture path",
             bridge.backend_name()
@@ -361,7 +361,7 @@ impl ServoWebView {
         inner.webview.resize(size);
         // サーフェスが変わったので、テクスチャの橋も作り直す。
         inner.bridge.release();
-        inner.bridge = bridge::create(&inner.context, size);
+        inner.bridge = bridge::create(&inner.context, size, &HostContext::capture());
     }
 
     // ── 入力 ────────────────────────────────────────────────────────────────

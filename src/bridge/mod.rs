@@ -53,12 +53,16 @@ pub trait TextureBridge {
 ///
 /// GPU 経路の初期化に失敗した場合は警告を出して CPU 経路に落ちる。
 /// 「対応レンダラでないと起動しない拡張」にはしない。
-pub fn create(context: &GodotRenderingContext, size: PhysicalSize<u32>) -> Box<dyn TextureBridge> {
+pub fn create(
+    context: &GodotRenderingContext,
+    size: PhysicalSize<u32>,
+    host: &crate::gl_guard::HostContext,
+) -> Box<dyn TextureBridge> {
     let driver = RenderingServer::singleton()
         .get_current_rendering_driver_name()
         .to_string();
 
-    match try_create_shared(&driver, context, size) {
+    match try_create_shared(&driver, context, size, host) {
         Some(Ok(bridge)) => return bridge,
         Some(Err(error)) => {
             godot_warn!(
@@ -83,7 +87,9 @@ fn try_create_shared(
     driver: &str,
     context: &GodotRenderingContext,
     size: PhysicalSize<u32>,
+    host: &crate::gl_guard::HostContext,
 ) -> Option<Result<Box<dyn TextureBridge>, String>> {
+    let _ = host;
     #[cfg(windows)]
     if driver == "d3d12" {
         return Some(
@@ -98,7 +104,7 @@ fn try_create_shared(
     #[cfg(target_os = "android")]
     if driver == "opengl3" {
         return Some(
-            android::AndroidBridge::new(context, size)
+            android::AndroidBridge::new(context, size, host)
                 .map(|bridge| Box::new(bridge) as Box<dyn TextureBridge>),
         );
     }

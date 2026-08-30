@@ -20,6 +20,12 @@ impl HostContext {
     pub fn capture() -> Self {
         Self(imp::Saved::capture())
     }
+
+    /// 控えたコンテキストへ今すぐ戻す。drop を待たずに Godot 側の GL を呼びたい
+    /// ときに使う。何度呼んでもよい。
+    pub fn restore(&self) {
+        self.0.restore();
+    }
 }
 
 #[cfg(target_os = "android")]
@@ -63,8 +69,8 @@ mod imp {
         }
     }
 
-    impl Drop for Saved {
-        fn drop(&mut self) {
+    impl Saved {
+        pub fn restore(&self) {
             if self.display.is_null() || self.context.is_null() {
                 return;
             }
@@ -72,6 +78,12 @@ mod imp {
             unsafe {
                 eglMakeCurrent(self.display, self.draw, self.read, self.context);
             }
+        }
+    }
+
+    impl Drop for Saved {
+        fn drop(&mut self) {
+            self.restore();
         }
     }
 }
@@ -85,5 +97,7 @@ mod imp {
         pub fn capture() -> Self {
             Self
         }
+
+        pub fn restore(&self) {}
     }
 }

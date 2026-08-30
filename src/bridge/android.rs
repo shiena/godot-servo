@@ -120,7 +120,11 @@ pub struct AndroidBridge {
 }
 
 impl AndroidBridge {
-    pub fn new(context: &GodotRenderingContext, size: PhysicalSize<u32>) -> Result<Self, String> {
+    pub fn new(
+        context: &GodotRenderingContext,
+        size: PhysicalSize<u32>,
+        host: &crate::gl_guard::HostContext,
+    ) -> Result<Self, String> {
         // Servo の GL コンテキストをカレントにしてから EGL を触る。
         context
             .make_current_public()
@@ -184,6 +188,12 @@ impl AndroidBridge {
                 glow::LINEAR as i32,
             );
             gl.bind_texture(glow::TEXTURE_2D, None);
+
+            // ここから先は Godot 側の GL 呼び出しになる。`ExternalTexture` は
+            // 内部で `glEGLImageTargetTexture2DOES` を呼ぶので、Servo のコンテキストが
+            // カレントなまま作ると Godot ではない側にテクスチャができてしまう。
+            // 先に Godot のコンテキストへ戻す。
+            host.restore();
 
             // 同じ EGLImage を Godot に渡す。`ExternalTexture` は Texture2D なので
             // マテリアルにそのまま挿せる。
