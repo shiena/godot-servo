@@ -15,7 +15,10 @@ static func page_url(page: String) -> String:
 
 	var source_dir := "res://demo/web"
 	var absolute := ProjectSettings.globalize_path(source_dir)
-	if not FileAccess.file_exists(absolute.path_join("index.html")):
+	# 判定は `OS.has_feature("editor")` で行う。書き出し後の Android では
+	# `globalize_path()` が `res://…` をそのまま返し、`FileAccess.file_exists()` は
+	# PCK の中を見て true になるので、パスの有無では区別できない。
+	if not OS.has_feature("editor"):
 		absolute = ProjectSettings.globalize_path("user://web")
 		_mirror(source_dir, "user://web")
 

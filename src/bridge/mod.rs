@@ -29,6 +29,14 @@ pub trait TextureBridge {
 
     fn backend_name(&self) -> &'static str;
 
+    /// `samplerExternalOES` でしか読めないテクスチャか。
+    ///
+    /// Android の `GL_TEXTURE_EXTERNAL_OES` がこれにあたる。`sampler2D` で
+    /// 読もうとすると黒くなるので、利用側はシェーダを差し替える必要がある。
+    fn needs_external_sampler(&self) -> bool {
+        false
+    }
+
     /// テクスチャが上下反転しているか。
     ///
     /// GL は左下原点なので、途中で転送を挟む経路では転送時に直せる。IOSurface を

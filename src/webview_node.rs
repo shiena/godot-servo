@@ -283,6 +283,15 @@ impl ServoWebView {
             .is_some_and(|inner| inner.bridge.needs_v_flip())
     }
 
+    /// `samplerExternalOES` を使うシェーダでないと読めないテクスチャか。
+    /// Android の AHardwareBuffer 経路だけ `true` になる。
+    #[func]
+    fn needs_external_sampler(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|inner| inner.bridge.needs_external_sampler())
+    }
+
     // ── 操作 ────────────────────────────────────────────────────────────────
 
     #[func]

@@ -243,6 +243,10 @@ impl TextureBridge for AndroidBridge {
         "android-ahardwarebuffer"
     }
 
+    fn needs_external_sampler(&self) -> bool {
+        true
+    }
+
     fn release(&mut self) {
         // SAFETY: いずれも自分で確保したもの。二重解放しないよう null にする。
         unsafe {

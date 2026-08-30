@@ -14,6 +14,7 @@ var browser: ServoWebView
 var screen: MeshInstance3D
 var camera: Camera3D
 var material: StandardMaterial3D
+var external_material: ShaderMaterial
 var hud: RichTextLabel
 
 ## 直近にポインタが指していた WebView 内のピクセル座標。
@@ -190,6 +191,17 @@ func _on_frame_updated() -> void:
 	var texture: Texture2D = browser.get_texture()
 	if texture == null:
 		return
+	if browser.needs_external_sampler():
+		# Android の共有バッファは GL_TEXTURE_EXTERNAL_OES で届く。`sampler2D` では
+		# 読めないので、`samplerExternalOES` を使うシェーダに差し替える。
+		external_material = ShaderMaterial.new()
+		external_material.shader = load("res://demo/servo_external.gdshader")
+		external_material.set_shader_parameter("servo_texture", texture)
+		screen.material_override = external_material
+		texture_bound = true
+		print("godot-servo: texture path = ", browser.get_backend_name(), " (external sampler)")
+		return
+
 	material.albedo_texture = texture
 	if browser.is_texture_flipped_v():
 		# macOS の IOSurface 共有経路だけ上下が逆に届く。マテリアル側で戻す。
