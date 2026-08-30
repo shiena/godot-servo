@@ -61,3 +61,11 @@ objc2 = "0.6.1"
 objc2-metal = "0.3.2"
 objc2-io-surface = { version = "0.3.2", features = ["std"] }
 objc2-foundation = "0.3.2"
+
+# Strip symbols from release builds. Servo makes the library large enough on its
+# own, and the symbols are of no use to anyone consuming a release. This is what
+# keeps the Android library down to a size an APK can carry; on Windows it
+# changes nothing, because MSVC keeps debug info in the .pdb rather than the DLL.
+# Debug builds keep their symbols.
+[profile.release]
+strip = true

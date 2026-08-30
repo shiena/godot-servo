@@ -151,15 +151,15 @@ The self check drives the extension end to end and reports what it verified:
 
 ```sh
 ./scripts/build.sh --release --android
-llvm-strip --strip-all addons/godot_servo/bin/android/arm64-v8a/libgodot_servo.so
 
 godot --headless --path . --export-debug Android godot-servo.apk
 adb install -r godot-servo.apk
 ```
 
-Strip the library. For arm64-v8a it is 1474 MB in debug, 170 MB in release, and 119 MB after
-`--strip-all`, which gives a 146 MB APK. Most of that is SpiderMonkey, Stylo, WebRender, and the ICU
-data.
+Release builds are stripped, through `strip = true` in `[profile.release]`, which puts arm64-v8a at
+119 MB and the APK at 146 MB. A debug build is 1474 MB, far past what an APK can carry, which is why
+Android is only ever built in release. Most of the size is SpiderMonkey, Stylo, WebRender, and the
+ICU data.
 
 ## Quickstart
 

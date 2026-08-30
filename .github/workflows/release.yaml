@@ -65,8 +65,83 @@ jobs:
           path: addons/godot_servo/bin/windows/
           if-no-files-found: error
 
+  build-unix:
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxext-dev libgl1-mesa-dev \
+            libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
+
+      - name: Set crate version
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
+          sed -i.bak "s/^version = \".*\"/version = \"${version#v}\"/" Cargo.toml
+          rm -f Cargo.toml.bak
+          cargo update --workspace
+
+      - name: Build and stage the addon
+        run: ./scripts/build.sh --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.platform }}
+          path: addons/godot_servo/bin/${{ matrix.platform }}/
+          if-no-files-found: error
+
+  build-android:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Set crate version
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"${version#v}\"/" Cargo.toml
+          cargo update --workspace
+
+      - name: Build and stage the addon
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          ./scripts/build.sh --release --android
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-android
+          path: addons/godot_servo/bin/android/
+          if-no-files-found: error
+
   package:
-    needs: [prepare, build-windows]
+    needs: [prepare, build-windows, build-unix, build-android]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -90,12 +165,17 @@ jobs:
           # register the same extension twice, so keep exactly one.
           cp godot_servo.gdextension godot_servo.gdextension.uid "$NAME/addons/godot_servo/"
           cp README.md README_ja.md LICENSE* "$NAME/" 2>/dev/null || true
-          for platform in windows macos linux; do
+          # Every platform the manifest names has to be here. A missing one used to
+          # be skipped silently, which shipped a Windows-only archive whose
+          # .gdextension still pointed at libraries for the others.
+          # Android nests one level deeper, under its ABI.
+          for platform in windows macos linux android; do
             src="staged/bin-$platform"
-            [ -d "$src" ] || continue
+            [ -d "$src" ] || { echo "::error::no artifact for $platform"; exit 1; }
             mkdir -p "$NAME/addons/godot_servo/bin/$platform"
             cp -r "$src/." "$NAME/addons/godot_servo/bin/$platform/"
           done
+          find "$NAME/addons/godot_servo/bin" -type f | sort
           zip -r "$NAME.zip" "$NAME"
           echo "ARCHIVE=$NAME.zip" >> "$GITHUB_ENV"
 

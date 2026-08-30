@@ -147,14 +147,14 @@ scripts/build.ps1 -Test                # 入力とシグナルのセルフチェ
 
 ```sh
 ./scripts/build.sh --release --android
-llvm-strip --strip-all addons/godot_servo/bin/android/arm64-v8a/libgodot_servo.so
 
 godot --headless --path . --export-debug Android godot-servo.apk
 adb install -r godot-servo.apk
 ```
 
-strip は必須と考えてください。arm64-v8a のライブラリは debug で 1474 MB、release で 170 MB、
-`--strip-all` 後で 119 MB、APK にして 146 MB です。大半は SpiderMonkey、Stylo、WebRender、
+release ビルドは `[profile.release]` の `strip = true` で strip されます。arm64-v8a のライブラリは
+119 MB、APK にして 146 MB です。debug ビルドは 1474 MB あり APK に載る大きさではないので、
+Android は release でしかビルドしません。大半は SpiderMonkey、Stylo、WebRender、
 そして ICU のデータです。
 
 ## 使いかた
