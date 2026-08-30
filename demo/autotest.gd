@@ -10,6 +10,8 @@ extends Node
 ## 結果は標準出力に出る。すべて OK なら終了コード 0。
 
 const VIEW_SIZE := Vector2i(1280, 720)
+## 検査全体の制限時間。CI の遅いランナーでも 1 分あれば終わる。
+const WATCHDOG_SECONDS := 180
 
 var browser: ServoWebView
 var results: Array[String] = []
@@ -17,6 +19,7 @@ var failures := 0
 
 var button_point := Vector2.ZERO
 var scrolled_before := -1.0
+var finished := false
 
 
 func _ready() -> void:
@@ -30,7 +33,18 @@ func _ready() -> void:
 	browser.load_finished.connect(_on_load_finished)
 	browser.ime_requested.connect(_on_ime_requested)
 
+	_watchdog()
 	_run()
+
+
+## 検査全体の上限。想定より遅い環境でも、黙って回り続けるより落ちたほうがよい。
+func _watchdog() -> void:
+	await get_tree().create_timer(WATCHDOG_SECONDS).timeout
+	if finished:
+		return
+	push_error("godot-servo self check: timed out after %d s" % WATCHDOG_SECONDS)
+	_check("the run finished within %d s" % WATCHDOG_SECONDS, false, "timed out")
+	_report()
 
 
 func _local_page_url() -> String:
@@ -68,7 +82,7 @@ func _run() -> void:
 	var touch_after := await _scroll_position()
 	_check("touch drag -> scroll", touch_after > touch_before + 1.0,
 		"scrollTop %.0f -> %.0f" % [touch_before, touch_after])
-	await _scroll_to_top()
+	await _settle_scroll_to_top()
 
 	# 6. テキスト欄をクリックすると Servo が IME を要求してくるか。
 	var input_point := await _element_center("#name")
@@ -144,8 +158,10 @@ func _touch_tap(point: Vector2) -> void:
 
 ## 指 1 本で `from` から `to` までなぞる。
 ##
-## Servo のタッチハンドラは 10 px 動くまでパンに切り替わらないので、
-## 途中経過を刻んで送る。離したあとは慣性が乗る。
+## Servo のタッチハンドラは 10 px 動くまでパンに切り替わらないので、途中経過を
+## 刻んで送る。最後に同じ座標を数回送ってから離すのは、慣性を乗せないため。
+## 動いたまま離すと Servo がフリングを始め、そのあとの検査が
+## 「指を離した時点のスクロール位置」に依存して不安定になる。
 func _touch_drag(from: Vector2, to: Vector2, steps: int = 10) -> void:
 	var press := InputEventScreenTouch.new()
 	press.index = 0
@@ -160,16 +176,31 @@ func _touch_drag(from: Vector2, to: Vector2, steps: int = 10) -> void:
 		browser.feed_input(drag, point)
 		await get_tree().process_frame
 
+	# 速度を 0 に落としてから離す。
+	for i in 3:
+		var still := InputEventScreenDrag.new()
+		still.index = 0
+		browser.feed_input(still, to)
+		await get_tree().process_frame
+
 	var release := InputEventScreenTouch.new()
 	release.index = 0
 	release.pressed = false
 	browser.feed_input(release, to)
 
 
-## 慣性が残ったまま次の検査に入らないよう、スクロール位置を戻す。
-func _scroll_to_top() -> void:
-	browser.evaluate_javascript("document.querySelector('main').scrollTop = 0")
-	await _sleep(0.3)
+## スクロール位置を先頭に戻し、本当に止まるまで待つ。
+##
+## 慣性が残っていると、要素の座標を取ってからクリックが届くまでの間に
+## ページが動いてしまい、狙った要素に当たらない。
+func _settle_scroll_to_top() -> void:
+	var deadline := Time.get_ticks_msec() + 8000
+	while Time.get_ticks_msec() < deadline:
+		browser.evaluate_javascript("document.querySelector('main').scrollTop = 0")
+		await _sleep(0.3)
+		if await _scroll_position() == 0.0:
+			return
+	push_warning("godot-servo self check: the page kept scrolling")
 
 
 ## 確定文字列を Windows と同じ形 (unicode 付きのキーイベント) で送る。

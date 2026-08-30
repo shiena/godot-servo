@@ -14,6 +14,7 @@ jobs:
   format:
     name: Format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -24,6 +25,9 @@ jobs:
   windows:
     name: Build and self check (Windows)
     runs-on: windows-latest
+    # Servo をゼロからビルドすると 1 時間強かかる。セルフチェックが固まっても
+    # 既定の 6 時間ランナーを占有しないよう、少しだけ上に上限を置く。
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +73,7 @@ jobs:
   unix:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
     strategy:
       fail-fast: false
       matrix:
@@ -103,6 +108,7 @@ jobs:
   android:
     name: Build (Android ${{ matrix.abi }})
     runs-on: ubuntu-latest
+    timeout-minutes: 100
     strategy:
       fail-fast: false
       matrix:

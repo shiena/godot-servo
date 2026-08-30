@@ -125,7 +125,7 @@ scripts/build.ps1 -Test                # 入力とシグナルのセルフチェ
   OK   evaluate_javascript / script_result  (button at (95.2, 189.4))
   OK   click -> onclick -> bridge_event  (expected 'buy')
   OK   touch tap -> onclick -> bridge_event  (expected 'buy')
-  OK   touch drag -> scroll  (scrollTop 0 -> 1535)
+  OK   touch drag -> scroll  (scrollTop 0 -> 429)
   OK   focus input -> ime_requested  (caret [P: (28.0, 509.0), S: (220.0, 36.0)])
   OK   ime composition -> input value  (value '日本語')
   OK   os ime sequence -> committed once  (value '日本')

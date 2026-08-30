@@ -14,6 +14,7 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.normalize.outputs.version }}
     steps:
@@ -38,6 +39,7 @@ jobs:
   build-windows:
     needs: prepare
     runs-on: windows-latest
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
 
@@ -66,6 +68,7 @@ jobs:
   package:
     needs: [prepare, build-windows]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
