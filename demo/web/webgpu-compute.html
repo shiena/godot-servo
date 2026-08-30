@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>WebGPU compute check</title>
@@ -10,11 +10,11 @@
 </style>
 </head>
 <body>
-<div id="hud">初期化中…</div>
+<div id="hud">Initialising...</div>
 <script>
-// canvas をいっさい使わない WebGPU。デバイス生成と計算だけを試す。
-// canvas 版が落ちるのが「WebGPU そのもの」なのか「canvas への提示経路」なのかを
-// 切り分けるためのページ。
+// WebGPU with no canvas at all: device creation and compute only.
+// This page separates whether the canvas version crashes because of WebGPU itself
+// or because of the path that presents to a canvas.
 const hud = document.getElementById('hud');
 
 function report(payload) {
@@ -28,13 +28,13 @@ window.addEventListener('unhandledrejection', function (e) {
 
 (async function () {
   if (!navigator.gpu) {
-    report({ ok: false, reason: 'navigator.gpu が無い' });
+    report({ ok: false, reason: 'no navigator.gpu' });
     return;
   }
   try {
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) {
-      report({ ok: false, reason: 'requestAdapter が null' });
+      report({ ok: false, reason: 'requestAdapter returned null' });
       return;
     }
     const device = await adapter.requestDevice();

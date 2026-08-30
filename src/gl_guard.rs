@@ -1,27 +1,27 @@
-//! Servo に GL コンテキストを貸している間、Godot のものを退避しておく。
+//! Holds Godot's GL context aside while Servo borrows the thread.
 //!
-//! Servo は surfman 経由で自前の GL コンテキストを持ち、描画のたびにそれを
-//! カレントにする。Godot が Vulkan / D3D12 / Metal で描いている環境ではスレッドの
-//! GL コンテキストを誰も使っていないので、奪いっぱなしでも実害が無い。
+//! Servo keeps its own GL context through surfman and makes it current every
+//! time it draws. Where Godot renders with Vulkan, D3D12 or Metal, nothing else
+//! on the thread wants a GL context, so keeping it costs nothing.
 //!
-//! Android の Compatibility (GLES3) レンダラだけは事情が違う。Godot 自身が同じ
-//! スレッドで EGL コンテキストを持って描画している。借りたまま返さないと、Godot は
-//! Servo のコンテキストに向かってシェーダをコンパイルし描画することになり、
-//! 描画が壊れるか異常終了する。
+//! Android's Compatibility (GLES3) renderer is the exception: Godot draws from
+//! its own EGL context on the same thread. Borrowing without giving it back
+//! leaves Godot compiling shaders and drawing against Servo's context, which
+//! either corrupts the frame or crashes.
 //!
-//! `HostContext::capture()` で今カレントなものを控え、drop で戻す。
+//! `HostContext::capture()` records whatever is current; drop restores it.
 
-/// 借りる前の GL コンテキストを控えておくもの。drop で元に戻す。
+/// The GL context that was current before the loan. Restored on drop.
 pub struct HostContext(imp::Saved);
 
 impl HostContext {
-    /// いまカレントな GL コンテキストを控える。
+    /// Record the GL context that is current right now.
     pub fn capture() -> Self {
         Self(imp::Saved::capture())
     }
 
-    /// 控えたコンテキストへ今すぐ戻す。drop を待たずに Godot 側の GL を呼びたい
-    /// ときに使う。何度呼んでもよい。
+    /// Restore the recorded context immediately, rather than waiting for drop.
+    /// Use it before calling into Godot's own GL. Safe to call repeatedly.
     pub fn restore(&self) {
         self.0.restore();
     }
@@ -56,7 +56,7 @@ mod imp {
 
     impl Saved {
         pub fn capture() -> Self {
-            // SAFETY: EGL の問い合わせのみ。カレントが無ければ null が返る。
+            // SAFETY: queries only. EGL returns null when nothing is current.
             unsafe {
                 Self {
                     display: eglGetCurrentDisplay(),
@@ -73,7 +73,7 @@ mod imp {
             if self.display.is_null() || self.context.is_null() {
                 return;
             }
-            // SAFETY: 控えた値をそのまま戻すだけ。
+            // SAFETY: puts back exactly the values that were recorded.
             unsafe {
                 eglMakeCurrent(self.display, self.draw, self.read, self.context);
             }
@@ -89,7 +89,7 @@ mod imp {
 
 #[cfg(not(target_os = "android"))]
 mod imp {
-    /// Android 以外では Godot が GL コンテキストを持たないので、何もしない。
+    /// Off Android, Godot holds no GL context, so there is nothing to save.
     pub struct Saved;
 
     impl Saved {

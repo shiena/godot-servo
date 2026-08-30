@@ -9,9 +9,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 godot = { version = "0.5.5", features = ["api-4-4"] }
-# webgpu feature は入れていない。Servo 0.5.0 の WebGPU はこの組み込みでは
-# プロセスが segfault で落ちるうえ、wgpu と naga がまるごとバイナリに乗る。
-# 試す場合は README の「WebGPU」の節を参照。
+# The webgpu feature is left out. WebGPU in Servo 0.5.0 segfaults the process in
+# this embedding, and enabling it also pulls all of wgpu and naga into the binary.
+# See the "Not supported" section of the README.
 servo = "0.5.0"
 surfman = { version = "0.13.0", features = ["chains"] }
 glow = "0.17"
@@ -24,11 +24,11 @@ rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] 
 log = "0.4"
 
 [target.'cfg(windows)'.dependencies]
-# ANGLE 経路の feature は Windows でのみ立てる。servo の `no-wgl` は
-# `mozangle/egl` を引き、mozangle の build.rs は非 Windows でその feature が
-# 立っていると panic する ("Do not know how to build EGL support for a
-# non-Windows platform.")。cargo は同じ依存をターゲット別に書けて、feature は
-# ターゲットが一致したときだけ合算される。
+# The ANGLE features are enabled on Windows only. Servo's `no-wgl` pulls in
+# `mozangle/egl`, and mozangle's build.rs panics off Windows when that feature is
+# set ("Do not know how to build EGL support for a non-Windows platform."). Cargo
+# allows the same dependency per target, and features are only unified when the
+# target matches.
 servo = { version = "0.5.0", features = ["no-wgl"] }
 surfman = { version = "0.13.0", features = ["sm-angle-default"] }
 
@@ -45,15 +45,15 @@ wio = "0.2"
 winapi = { version = "0.3", features = ["d3d11"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# jemalloc を dlopen 可能な TLS モデルで作らせる。
+# Build jemalloc with a TLS model that can be dlopen'd.
 #
-# Servo は servo-allocator 経由で jemalloc を使う。jemalloc は既定で initial-exec
-# の TLS を使うため、リンク結果に STATIC_TLS フラグが立ち、PT_TLS が glibc の
-# 静的 TLS 余剰 (既定 1664 バイト) を超える。GDExtension は dlopen されるので
-# Godot が読み込めず `cannot allocate memory in static TLS block` になる。
+# Servo uses jemalloc through servo-allocator. jemalloc defaults to initial-exec
+# TLS, which sets STATIC_TLS on the link result and pushes PT_TLS past glibc's
+# static TLS surplus, 1664 bytes by default. A GDExtension is dlopen'd, so Godot
+# cannot load it and reports `cannot allocate memory in static TLS block`.
 #
-# ここでは使わないが、直接依存に書くと cargo が feature を合算するので、
-# servo-allocator が引く同じ jemalloc に効く。
+# Nothing here uses it directly, but naming it as a dependency makes cargo unify
+# the features, which reaches the same jemalloc servo-allocator pulls in.
 tikv-jemalloc-sys = { version = "0.6.1", features = ["disable_initial_exec_tls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

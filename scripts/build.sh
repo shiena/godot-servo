@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# godot-servo のローカル開発パイプライン (Linux / macOS)。
-# build.ps1 の対。
+# The local development pipeline for godot-servo (Linux / macOS).
+# The counterpart of build.ps1.
 #
-# 使い方:
-#   ./scripts/build.sh                    # ビルドして配置 (debug)
+# Usage:
+#   ./scripts/build.sh                    # build and stage (debug)
 #   ./scripts/build.sh --release
-#   ./scripts/build.sh --run              # 配置済みのものでデモを起動
+#   ./scripts/build.sh --run              # run the demo against what is staged
 #   ./scripts/build.sh --run --scene flat
-#   ./scripts/build.sh --test             # 入力とシグナルのセルフチェック
+#   ./scripts/build.sh --test             # input and signal self check
 #   ./scripts/build.sh --run --page webgl
-#   ./scripts/build.sh --checks           # fmt + clippy も回す
-#   ./scripts/build.sh --android          # Android (arm64-v8a)。cargo-ndk が要る
+#   ./scripts/build.sh --checks           # also run fmt and clippy
+#   ./scripts/build.sh --android          # Android (arm64-v8a), needs cargo-ndk
 #   ./scripts/build.sh --android --abi x86_64
 #
-# ステージを何も指定しなければビルドのみ。
+# With no stage given, it only builds.
 
 set -euo pipefail
 
@@ -81,7 +81,7 @@ if [ "$do_checks" = 1 ]; then
 	say 'cargo fmt --check'
 	cargo fmt --check || die 'cargo fmt --check failed (run `cargo fmt`)'
 	say 'cargo clippy'
-	# 警告はエラー扱い。CI がこのフラグで回るので、ここを緩めると門番が消える。
+	# Warnings are errors. CI runs with this flag, so relaxing it here removes the gate.
 	if [ "$profile" = release ]; then
 		cargo clippy --all-targets --release -- -D warnings || die 'cargo clippy failed'
 	else
@@ -91,16 +91,17 @@ fi
 
 if [ "$do_build" = 1 ]; then
 	if [ "$android" = 1 ]; then
-		# NDK r23 以降は libgcc を廃して libunwind に移行したが、依存のどれかが
-		# まだ `-lgcc` を要求してリンクが落ちる。libunwind へ読み替えるスタブを
-		# 置いて、そのディレクトリを探索パスに足す。
+		# NDK r23 dropped libgcc in favour of libunwind, but something in the
+		# dependency graph still asks the linker for `-lgcc` and the link fails.
+		# Drop in a stub that redirects to libunwind and put its directory on the
+		# search path.
 		gcc_stub="$repo_root/target/android-libgcc-stub"
 		mkdir -p "$gcc_stub"
 		echo 'INPUT(-lunwind)' > "$gcc_stub/libgcc.a"
 		export RUSTFLAGS="${RUSTFLAGS:-} -L $gcc_stub"
 
-		# bindgen が libclang を要求する。ディストリの clang が入っていない環境でも
-		# NDK が同梱しているものを使えるので、見つかったらそれを指す。
+		# bindgen needs libclang. The NDK ships one, which works even where the
+		# distribution's clang is not installed, so point at it when it is there.
 		if [ -z "${LIBCLANG_PATH:-}" ]; then
 			for candidate in "${ANDROID_NDK_HOME:-}"/toolchains/llvm/prebuilt/*/lib \
 			                 "${ANDROID_NDK_HOME:-}"/toolchains/llvm/prebuilt/*/musl/lib; do
@@ -112,7 +113,7 @@ if [ "$do_build" = 1 ]; then
 			done
 		fi
 
-		# cargo-ndk と ANDROID_NDK_HOME が要る。
+		# Requires cargo-ndk and ANDROID_NDK_HOME.
 		say "cargo ndk -t $abi build ($profile)"
 		if [ "$profile" = release ]; then
 			cargo ndk -t "$abi" build --release

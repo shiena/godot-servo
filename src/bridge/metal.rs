@@ -1,15 +1,14 @@
-//! macOS / Metal の GPU 共有経路。
+//! The macOS / Metal GPU sharing path.
 //!
-//! 3 プラットフォームで最も単純になる。surfman が macOS で作るオフスクリーン
-//! サーフェスの実体は IOSurface で、IOSurface はもともとプロセスやデバイスを
-//! またいで共有できる。したがって Godot の `MTLDevice` にそのまま
-//! `newTextureWithDescriptor:iosurface:plane:` させれば、コピーもハンドルの
-//! やりとりも要らない。
+//! The simplest of the three. The offscreen surface surfman creates on macOS is
+//! an IOSurface, and an IOSurface is shareable across processes and devices to
+//! begin with. Godot's `MTLDevice` can therefore be asked for
+//! `newTextureWithDescriptor:iosurface:plane:` directly, with no copy and no
+//! handle to pass around.
 //!
-//! そのぶん転送が一切ないので、上下反転を吸収する場所もない。GL は左下原点なので
-//! 結果は上下逆になる。`needs_v_flip()` が `true` を返すのはそのため。
-//!
-//! 注意: この経路は Windows 上では一度もコンパイルできていない。
+//! Because nothing is transferred, there is also nowhere to correct the
+//! orientation. GL's origin is bottom-left, so the result arrives upside down,
+//! which is why `needs_v_flip()` returns `true`.
 
 use dpi::PhysicalSize;
 use godot::classes::rendering_device::{DataFormat, TextureSamples, TextureType, TextureUsageBits};
@@ -24,10 +23,11 @@ use super::TextureBridge;
 use crate::rendering_context::GodotRenderingContext;
 
 pub struct MetalBridge {
-    /// IOSurface の参照を保持する。これが落ちると下のテクスチャの裏付けが消える。
+    /// Holds the IOSurface reference. Dropping it would pull the storage out
+    /// from under the texture below.
     _native_surface: NativeSurface,
-    /// Godot に渡した `id<MTLTexture>`。Godot 側が retain するとは限らないので
-    /// こちらでも持っておく。
+    /// The `id<MTLTexture>` handed to Godot. Godot does not necessarily retain
+    /// it, so keep a reference here too.
     _metal_texture: Retained<AnyObject>,
     rd_texture: Rid,
     texture: Gd<Texture2Drd>,
@@ -37,9 +37,9 @@ impl MetalBridge {
     pub fn new(context: &GodotRenderingContext, size: PhysicalSize<u32>) -> Result<Self, String> {
         let metal_device = super::godot_logical_device()?;
 
-        // バインド中のサーフェスから IOSurface を取り出す。`&Surface` が要るので
-        // 一度だけ unbind/rebind する。以降は同じサーフェスを使い続けるため、
-        // ここで作ったテクスチャは寿命いっぱい有効。
+        // Take the IOSurface out of the bound surface. That needs a `&Surface`,
+        // so unbind and rebind once. The same surface is used from here on, so
+        // the texture created below stays valid for the whole lifetime.
         let native_surface = context
             .with_unbound_surface(|device, surface| device.native_surface(surface))
             .map_err(|error| format!("failed to take the surfman surface: {error:?}"))?;
@@ -52,7 +52,7 @@ impl MetalBridge {
 
         let rd_texture = rendering_device.texture_create_from_extension(
             TextureType::TYPE_2D,
-            // IOSurface は kCVPixelFormatType_32BGRA で作られる。
+            // The IOSurface is created as kCVPixelFormatType_32BGRA.
             DataFormat::B8G8R8A8_UNORM,
             TextureSamples::SAMPLES_1,
             TextureUsageBits::SAMPLING_BIT | TextureUsageBits::COLOR_ATTACHMENT_BIT,
@@ -83,7 +83,8 @@ impl TextureBridge for MetalBridge {
         self.texture.clone().upcast()
     }
 
-    /// 同じメモリを見ているので転送は要らない。GL の作業を流し切るだけ。
+    /// Both sides look at the same memory, so there is nothing to transfer.
+    /// Just flush the outstanding GL work.
     fn update(&mut self, context: &GodotRenderingContext) -> Result<(), String> {
         use glow::HasContext;
         unsafe { context.glow().flush() };
@@ -110,12 +111,11 @@ impl TextureBridge for MetalBridge {
     }
 }
 
-/// Godot の `MTLDevice` に、Servo が描いている IOSurface を裏付けとするテクスチャを
-/// 作らせる。
+/// Ask Godot's `MTLDevice` for a texture backed by the IOSurface Servo draws into.
 ///
 /// # Safety
 ///
-/// `metal_device` は生存中の `id<MTLDevice>` でなければならない。
+/// `metal_device` must be a live `id<MTLDevice>`.
 unsafe fn create_metal_texture(
     metal_device: u64,
     native_surface: &NativeSurface,
@@ -129,7 +129,7 @@ unsafe fn create_metal_texture(
     descriptor.setDepth(1);
     descriptor.setMipmapLevelCount(1);
     descriptor.setSampleCount(1);
-    // Godot 側が color attachment としても宣言するので、両方許可しておく。
+    // Godot declares it as a color attachment too, so allow both usages.
     descriptor.setUsage(MTLTextureUsage::ShaderRead | MTLTextureUsage::RenderTarget);
 
     let device: &AnyObject = &*(metal_device as *const AnyObject);

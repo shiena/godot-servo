@@ -1,8 +1,8 @@
-// Android の AHardwareBuffer 経路で使うシェーダ。
+// The shader used by the Android AHardwareBuffer path.
 //
-// 共有バッファは GL_TEXTURE_EXTERNAL_OES として届くので、`sampler2D` では読めない
-// (黒くなる)。Godot は `samplerExternalOES` を uniform の型として受け付け、
-// GLES3 以外では `sampler2D` に #define される。
+// The shared buffer arrives as a GL_TEXTURE_EXTERNAL_OES, which a `sampler2D`
+// cannot read: it comes out black. Godot accepts `samplerExternalOES` as a uniform
+// type and #defines it to `sampler2D` outside GLES3.
 shader_type spatial;
 render_mode unshaded, cull_disabled;
 

@@ -1,18 +1,18 @@
-﻿# godot-servo のローカル開発パイプライン (Windows / PowerShell)。
+﻿# The local development pipeline for godot-servo (Windows / PowerShell).
 #
-# cargo でビルドし、成果物を godot_servo.gdextension が指す場所へ配り、必要なら
-# デモを起動する。
+# Builds with cargo, places the result where godot_servo.gdextension points, and
+# runs the demo when asked.
 #
-# 使い方:
-#   .\scripts\build.ps1                        # ビルドして配置 (debug)
-#   .\scripts\build.ps1 -Release               # release プロファイル
-#   .\scripts\build.ps1 -Run                   # 配置済みのものでデモを起動
-#   .\scripts\build.ps1 -Run -Scene flat       # 2D の確認用シーン
-#   .\scripts\build.ps1 -Test                  # 入力とシグナルのセルフチェック
-#   .\scripts\build.ps1 -Run -Page webgl       # 別のページを開く
-#   .\scripts\build.ps1 -Checks                # fmt + clippy も回す
+# Usage:
+#   .\scripts\build.ps1                        # build and stage (debug)
+#   .\scripts\build.ps1 -Release               # the release profile
+#   .\scripts\build.ps1 -Run                   # run the demo against what is staged
+#   .\scripts\build.ps1 -Run -Scene flat       # the 2D scene, for checking things
+#   .\scripts\build.ps1 -Test                  # input and signal self check
+#   .\scripts\build.ps1 -Run -Page webgl       # open a different page
+#   .\scripts\build.ps1 -Checks                # also run fmt and clippy
 #
-# ステージを何も指定しなければビルドのみ。
+# With no stage given, it only builds.
 
 param(
     [switch]$Release,
@@ -65,14 +65,15 @@ if (-not (Test-Path $built)) { Die "Build artifact not found: $built" }
 New-Item -ItemType Directory -Force $binDir | Out-Null
 Copy-Item -Force $built (Join-Path $binDir 'godot_servo.x86_64.dll')
 
-# ANGLE。mozangle が自分の OUT_DIR に置いたものを拾う。これが無いと surfman の
-# LoadLibrary が失敗して Servo が起動しない。
+# ANGLE, picked out of the OUT_DIR mozangle put it in. Without it surfman's
+# LoadLibrary fails and Servo never starts.
 #
-# build.rs では拾えない。cargo は自クレートの build.rs と依存クレートの build.rs の
-# 実行順を保証しないので、mozangle の OUT_DIR がまだ存在しないことがある。
-# cargo build の完了後に探せば順序に依存しない。
-# feature を変えると cargo は別の fingerprint で mozangle を作り直すので、
-# mozangle-* が複数残る。古いものを掴まないよう新しい順に見る。
+# A build.rs cannot reach it: cargo makes no promise about the order in which a
+# crate's own build.rs and its dependencies' run, so mozangle's OUT_DIR may not
+# exist yet. Looking after cargo build finishes depends on no such order.
+# Changing a feature makes cargo rebuild mozangle under a different fingerprint,
+# leaving several mozangle-* directories. Newest first, so the stale one is not
+# picked up.
 $angleDir = Get-ChildItem (Join-Path $target 'build') -Directory -Filter 'mozangle-*' -ErrorAction SilentlyContinue |
     ForEach-Object { Join-Path $_.FullName 'out' } |
     Where-Object { Test-Path (Join-Path $_ 'libEGL.dll') } |
@@ -103,18 +104,18 @@ if ($Run -or $Test) {
 
     Say "$Godot $($godotArgs -join ' ')"
 
-    # `& $Godot` ではなく Start-Process を使う。Godot の非コンソール版
-    # (Godot_v*_win64.exe。setup-godot が CI に入れるのもこれ) は自分をコンソールから
-    # 切り離すため、`&` は待たずに戻り、出力も $LASTEXITCODE も得られない。
-    # 出力はファイルに落としてから流し直す。
-    # New-TemporaryFile は Windows PowerShell 5.1 に無いことがある。
-    # .NET の API なら 5.1 でも 7 でも同じように使える。
+    # Start-Process rather than `& $Godot`. The non-console Godot build
+    # (Godot_v*_win64.exe, which is what setup-godot installs in CI) detaches
+    # itself from the console, so `&` returns without waiting and yields neither
+    # the output nor $LASTEXITCODE. The output goes to a file and is replayed.
+    # New-TemporaryFile is missing from some Windows PowerShell 5.1 installs; the
+    # .NET API behaves the same on 5.1 and 7.
     $stdout = [System.IO.Path]::GetTempFileName()
     $stderr = [System.IO.Path]::GetTempFileName()
 
-    # セルフチェックは自分で終了するはずのもの。固まったら待ち続けず、そこまでの
-    # 出力を見せて落とす。CI では実行ステップの出力が終了時にまとめて流れるので、
-    # 待ち続けると何が起きたのか一切分からない。
+    # The self check is supposed to quit by itself. When it stalls, do not wait
+    # forever: show whatever it printed and fail. In CI a step's output is flushed
+    # only when the step ends, so waiting leaves no trace of what happened.
     $limit = if ($TimeoutSeconds -gt 0) { $TimeoutSeconds } elseif ($Test) { 300 } else { 0 }
 
     try {
@@ -133,7 +134,7 @@ if ($Run -or $Test) {
             $process.WaitForExit()
         }
 
-        # 明示しないと 5.1 が ANSI で読み、日本語の出力が化ける。
+        # Without saying so, 5.1 reads it as ANSI and mangles non-ASCII output.
         Get-Content $stdout -Encoding UTF8 -ErrorAction SilentlyContinue | Write-Host
         Get-Content $stderr -Encoding UTF8 -ErrorAction SilentlyContinue | Write-Host
         if (-not $exited) { Die "Godot did not exit within $limit s" }

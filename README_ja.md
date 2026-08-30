@@ -125,13 +125,20 @@ scripts/build.ps1 -Test                # 入力とシグナルのセルフチェ
 --- godot-servo self check ---
   path: d3d12-shared-nt-handle
   OK   bridge_event (godot.emit)  (expected 'ready')
-  OK   evaluate_javascript / script_result  (button at (95.2, 189.4))
+  OK   evaluate_javascript / script_result  (button at (96.2, 189.4))
   OK   click -> onclick -> bridge_event  (expected 'buy')
   OK   touch tap -> onclick -> bridge_event  (expected 'buy')
-  OK   touch drag -> scroll  (scrollTop 0 -> 429)
+  OK   touch drag -> scroll  (scrollTop 0 -> 476)
   OK   focus input -> ime_requested  (caret [P: (28.0, 509.0), S: (220.0, 36.0)])
   OK   ime composition -> input value  (value '日本語')
   OK   os ime sequence -> committed once  (value '日本')
+  OK   alert -> dialog_alert  (message 'hello from the page')
+  OK   respond_to_dialog releases the page  (no pending)
+  OK   confirm -> respond_to_dialog(true)  (value true)
+  OK   prompt -> dialog_prompt  (default 'hero')
+  OK   prompt -> respond_to_dialog(text)  (value 'godot')
+  OK   select -> select_element_requested  (4 options, last group 'Advanced')
+  OK   respond_to_select sets the value  (value 'sage')
   OK   wheel -> scroll  (scrollTop 0 -> 608)
 --- 0 failed ---
 ```
@@ -225,6 +232,33 @@ OS の IME ではなくゲーム側の入力 UI から変換を駆動したい�
 **既知の制限。** 変換を取り消すと未確定文字列が欄に残ります。Servo の `compositionend` は
 データが空のときに選択を外すだけで、未確定文字列を消す手段が composition の API に無いためです。
 
+### ページのダイアログやピッカーに返事をする
+
+`alert()` / `confirm()` / `prompt()` / `<select>` は、埋め込み側が返事をするまで
+ページの JavaScript を止めます。拡張自身は UI を持たないので、それぞれをシグナルで
+渡し、ゲーム側で好きな形に見せて返事をしてもらいます。
+
+```gdscript
+browser.dialog_confirm.connect(func(message: String) -> void:
+    var accepted: bool = await my_dialog.ask(message)
+    browser.respond_to_dialog(accepted, "")
+)
+
+browser.select_element_requested.connect(func(options: Array, multiple: bool) -> void:
+    # options は [{ id, label, disabled, group }, ...]。<optgroup> は畳んである。
+    var chosen: int = await my_menu.pick(options)
+    browser.respond_to_select([chosen])
+)
+```
+
+必ず返事をしてください。誰も返事をしないダイアログを待つページは、そのまま止まり続けます。
+ゲーム側の UI が何も選ばずに閉じたときは `cancel_pending_dialog()` を呼んでください。
+`has_pending_dialog()` で返事待ちがあるか分かります。文字列はページが決めるものなので、
+ゲーム自身の UI と見分けが付く形で出してください。
+
+ファイル選択・色選択・コンテキストメニューはシグナルにしていません。Servo には既定の返事
+(何も選ばない) が返り、ページはそのまま進みます。
+
 ### ページから Godot へイベントを送る
 
 拡張はすべてのページに `window.godot` を注入します。
@@ -254,11 +288,13 @@ JavaScript を書かず、ただのリンクでも送れます。
 | `evaluate_javascript(code) -> int` | 結果は `script_result(id, value)` で届く |
 | `feed_input(event, position)`, `notify_pointer_left()` | 入力 |
 | `feed_ime_composition(state, text)`, `feed_ime_preedit(text)`, `cancel_ime_composition()` | IME |
+| `respond_to_dialog(accepted, text)`, `respond_to_select(ids)`, `cancel_pending_dialog()`, `has_pending_dialog()` | ダイアログとピッカー |
 | `set_view_size_px(size)` | 解像度 |
 
 シグナル: `frame_updated`, `title_changed`, `url_changed`, `load_started`, `load_finished`,
 `cursor_changed`, `console_message`, `bridge_event`, `script_result`, `ime_requested`,
-`ime_dismissed`
+`ime_dismissed`, `crashed`, `dialog_alert`, `dialog_confirm`, `dialog_prompt`,
+`select_element_requested`
 
 ## WebGL
 
@@ -359,6 +395,8 @@ Servo は `servo-allocator` を通じて jemalloc を取り込みますが、jem
 - **iOS。** surfman も Servo も対象にしておらず、iOS は JIT と `dlopen` を禁じています。
 - **Linux の GPU 共有経路。** `VK_EXT_external_memory_dma_buf` のために
   [godotengine/godot#114940](https://github.com/godotengine/godot/pull/114940) が要ります。
+- **ファイル選択・色選択・コンテキストメニュー。** Servo は 3 つとも用意していますが、
+  まだシグナルにしていません。既定の返事 (何も選ばない) を返します。
 - **`ServoWebView` を複数置くこと。** 設計上は `Servo` 本体を 1 つ共有しますが、未検証です。
 
 ## 似たプロジェクト
@@ -373,8 +411,9 @@ Servo を Godot に組み込むアドオンが他に 2 つあります。どち�
 | [emanuelbertey/web-servo-godot](https://github.com/emanuelbertey/web-servo-godot) | CPU リードバック | 記載なし |
 | 本プロジェクト | GPU 共有テクスチャ + CPU フォールバック | MIT / Apache-2.0 |
 
-GPU 経路が要らないなら、現時点では `web-servo-godot` のほうが守備範囲が広めです
-(シグナルが多く、JavaScript API があり、Linux と Android のビルドが通っています)。
+GPU 経路が要らないなら、`web-servo-godot` のほうが Servo の埋め込み API をより広く
+露出しています (履歴、フォーカス、ファビコン、全画面、権限と認証の要求、
+ファイル・色・コンテキストメニューのピッカー)。
 ただしライセンスの記載が無いため、既定では著作権者に全権が留保されている扱いになります。
 
 ## ライセンス

@@ -1,11 +1,12 @@
-//! ANGLE の DLL を、この拡張と同じフォルダから先に読み込んでおく。
+//! Loads the ANGLE DLLs from beside this extension, ahead of anyone asking for them.
 //!
-//! surfman は ANGLE を `LoadLibraryA("libEGL.dll")` で名前だけ指定して掴む。
-//! GDExtension の DLL は Godot 本体とは別のフォルダに置かれるため、そのままでは
-//! 検索パスに乗らず `Unable to load the libEGL shared object` で落ちる。
+//! Surfman picks up ANGLE with `LoadLibraryA("libEGL.dll")`, by name alone. A
+//! GDExtension's DLL lives in its own folder rather than next to the Godot
+//! binary, so that name is not on the search path and startup fails with
+//! `Unable to load the libEGL shared object`.
 //!
-//! 先に絶対パスで `LoadLibraryW` しておけば、あとから名前で要求されても
-//! 読み込み済みのモジュールが返る。
+//! Calling `LoadLibraryW` with the absolute path first means the later
+//! by-name request resolves to the module that is already loaded.
 
 #[cfg(windows)]
 pub fn preload() {
@@ -43,7 +44,7 @@ pub fn preload() {
         }
     }
 
-    /// 自分自身 (この DLL) が置かれているフォルダ。
+    /// The folder this DLL itself sits in.
     fn self_directory() -> Option<PathBuf> {
         unsafe {
             let mut module = HMODULE::default();

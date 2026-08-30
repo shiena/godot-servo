@@ -1,13 +1,14 @@
-//! Godot 用の `RenderingContext` 実装。
+//! The `RenderingContext` implementation for Godot.
 //!
-//! ウィンドウを持たない surfman コンテキストを 1 つ作り、そこに紐づけた
-//! オフスクリーンサーフェス (Windows なら ANGLE の pbuffer = D3D11 テクスチャ、
-//! macOS なら IOSurface) に Servo を描かせる。
+//! One windowless surfman context, with a single offscreen surface bound to it
+//! for Servo to draw into: an ANGLE pbuffer (a D3D11 texture) on Windows, an
+//! IOSurface on macOS.
 //!
-//! ダブルバッファは使わない。サーフェスを 1 枚に固定することで、Godot 側に渡す
-//! テクスチャの RID が生存期間中ずっと変わらずに済む。代償として Servo の描画中に
-//! Godot がサンプルしうるが、`paint()` -> `present()` (glFlush) -> Godot の描画
-//! という順序をメインスレッドで守っている限り実害は出ない。
+//! There is no double buffering. Keeping to one surface means the RID of the
+//! texture handed to Godot never changes for the life of the view. In exchange
+//! Godot can sample while Servo draws, but that has caused no visible problem
+//! as long as `paint()`, `present()` (glFlush), and Godot's own render stay in
+//! that order on the main thread.
 
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
@@ -44,8 +45,8 @@ impl Drop for GodotRenderingContext {
 
 impl GodotRenderingContext {
     pub fn new(size: PhysicalSize<u32>) -> Result<Self, Error> {
-        // ウィンドウハンドルを渡さない。Windows で `sm-angle-default` が効いていれば
-        // ここで ANGLE (D3D11) バックエンドの Device になる。
+        // No window handle is passed. On Windows, with `sm-angle-default`
+        // enabled, this yields a Device on the ANGLE (D3D11) backend.
         let connection = Connection::new()?;
         let adapter = connection.create_adapter()?;
         let device = connection.create_device(&adapter)?;
@@ -109,14 +110,14 @@ impl GodotRenderingContext {
         &self.glow_gl
     }
 
-    /// トレイト経由でなく直接呼べる `make_current`。
+    /// `make_current` callable directly rather than through the trait.
     pub fn make_current_public(&self) -> Result<(), Error> {
         let device = self.device.borrow();
         let context = self.context.borrow();
         device.make_context_current(&context)
     }
 
-    /// Servo が描き込んでいる FBO の ID。共有テクスチャへの blit 元になる。
+    /// The id of the FBO Servo draws into. The blit source for the shared texture.
     pub fn framebuffer(&self) -> u32 {
         let device = self.device.borrow();
         let context = self.context.borrow();
@@ -129,10 +130,10 @@ impl GodotRenderingContext {
             .unwrap_or(0)
     }
 
-    /// バインド中のサーフェスを一時的に取り外して `f` に渡す。
+    /// Unbind the current surface temporarily and hand it to `f`.
     ///
-    /// macOS で IOSurface を取り出すときに使う。`&Surface` は
-    /// `context_surface_info()` からは得られないため、この経路が必要になる。
+    /// Used on macOS to get at the IOSurface. `context_surface_info()` does not
+    /// hand back a `&Surface`, so this detour is the only way to reach one.
     pub fn with_unbound_surface<T>(
         &self,
         f: impl FnOnce(&Device, &Surface) -> T,
@@ -154,7 +155,7 @@ impl GodotRenderingContext {
         Ok(result)
     }
 
-    /// サーフェスを作り直す。呼び出し側は `TextureBridge` も作り直すこと。
+    /// Recreate the surface. The caller must rebuild the `TextureBridge` too.
     pub fn recreate_surface(&self, size: PhysicalSize<u32>) -> Result<(), Error> {
         let device = self.device.borrow();
         let mut context = self.context.borrow_mut();
@@ -180,18 +181,18 @@ impl GodotRenderingContext {
         Ok(())
     }
 
-    /// FBO の中身を上下反転して RGBA8 で吸い出す。CPU フォールバック用。
+    /// Read the FBO back as RGBA8, flipped vertically. For the CPU fallback.
     pub fn read_pixels_flipped(&self, size: PhysicalSize<u32>) -> Option<Vec<u8>> {
         let mut pixels = vec![0u8; size.width as usize * size.height as usize * 4];
         self.read_pixels_flipped_into(size, &mut pixels)
             .then_some(pixels)
     }
 
-    /// `read_pixels_flipped()` の、渡された領域へ直接書く版。
+    /// `read_pixels_flipped()`, writing straight into the caller's buffer.
     ///
-    /// CPU フォールバックは毎フレームこれを呼ぶ。確保を呼び出し側で使い回せるように
-    /// してあり、1 フレームあたり数 MB の確保と複製が消える。
-    /// `out` の長さは `width * height * 4` ちょうどでなければならない。
+    /// The CPU fallback calls this every frame. Letting the caller reuse its
+    /// allocation removes several MB of allocation and copying per frame.
+    /// `out` must be exactly `width * height * 4` bytes long.
     pub fn read_pixels_flipped_into(&self, size: PhysicalSize<u32>, out: &mut [u8]) -> bool {
         let stride = size.width as usize * 4;
         let rows = size.height as usize;
@@ -201,7 +202,7 @@ impl GodotRenderingContext {
 
         let fbo = self.framebuffer();
         self.gleam_gl.bind_framebuffer(gl::FRAMEBUFFER, fbo);
-        // OSMesa の既知バグ回避 (servo 本体の実装に合わせる)。
+        // Works around a known OSMesa bug, matching Servo's own implementation.
         self.gleam_gl.bind_vertex_array(0);
 
         self.gleam_gl.read_pixels_into_buffer(
@@ -220,7 +221,7 @@ impl GodotRenderingContext {
             return false;
         }
 
-        // GL は左下原点なので、行単位で上下を入れ替える。
+        // GL's origin is bottom-left, so swap the rows top to bottom.
         for y in 0..rows / 2 {
             let top = y * stride;
             let bottom = (rows - 1 - y) * stride;
@@ -263,7 +264,8 @@ impl RenderingContext for GodotRenderingContext {
         }
     }
 
-    /// 単一バッファなので swap はしない。Godot が読む前に GL の作業を流し切る。
+    /// Single buffered, so there is nothing to swap. Flush the outstanding GL
+    /// work before Godot reads.
     fn present(&self) {
         self.gleam_gl.flush();
     }
@@ -285,7 +287,7 @@ impl RenderingContext for GodotRenderingContext {
     fn create_texture(&self, surface: Surface) -> Option<(SurfaceTexture, u32, Size2D<i32>)> {
         let device = self.device.borrow();
         let mut context = self.context.borrow_mut();
-        // surface はこの後 move されるので、サイズは先に取っておく。
+        // `surface` is moved just below, so read its size first.
         let size = device.surface_info(&surface).size;
         let surface_texture = device.create_surface_texture(&mut context, surface).ok()?;
         let gl_texture = device

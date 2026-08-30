@@ -10,7 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # 書式だけは依存をビルドせずに見られるので、速い足を分けておく。
+  # Formatting can be checked without building any dependency, so it gets its own
+  # fast job.
   format:
     name: Format
     runs-on: ubuntu-latest
@@ -25,8 +26,8 @@ jobs:
   windows:
     name: Build and self check (Windows)
     runs-on: windows-latest
-    # Servo をゼロからビルドすると 1 時間強かかる。セルフチェックが固まっても
-    # 既定の 6 時間ランナーを占有しないよう、少しだけ上に上限を置く。
+    # Building Servo from scratch takes an hour or so. The ceiling sits a little
+    # above that, so a stalled self check cannot hold a runner for the default six.
     timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
@@ -35,16 +36,16 @@ jobs:
         with:
           components: clippy
 
-      # 失敗時もキャッシュを保存する。既定は false だが、この構成では落ちるのは
-      # 自分のコードかスクリプトで、Servo と ANGLE のビルドはその手前で終わって
-      # いる。保存しないと失敗が続く限り毎回 1 時間かけて作り直すことになる。
+      # Save the cache on failure too. The default is false, but what fails here is
+      # our own code or scripts, by which point Servo and ANGLE are already built.
+      # Without saving, every run rebuilds them for an hour while the failure lasts.
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
 
-      # clippy とビルドを 1 回の呼び出しにまとめ、同じ debug プロファイルで回す。
-      # Servo のビルドはキャッシュが冷えていると 1 時間を超えるので、CI で
-      # release と debug の両方を積むのは避ける。release はリリース時だけ。
+      # clippy and the build go through one call, on the same debug profile.
+      # Building Servo on a cold cache takes over an hour, so CI never stacks a
+      # release build on top of a debug one. Release is for releases.
       - name: Lint, build, and stage the addon
         shell: pwsh
         run: ./scripts/build.ps1 -Checks
@@ -55,14 +56,14 @@ jobs:
           version: 4.7.2
           use-dotnet: false
 
-      # インポートを分けておく。まとめると、どちらで止まったのか分からない。
+      # Importing is its own step. Combined, there is no telling which one stalled.
       - name: Import the project
         shell: pwsh
         timeout-minutes: 10
         run: godot --headless --path . --import
 
-      # ランナーに GPU が無ければ CPU リードバック経路に落ちる。入力とシグナルの
-      # 検証はどちらの経路でも通る。
+      # With no GPU on the runner this falls back to CPU readback. The input and
+      # signal checks pass either way.
       - name: Self check
         shell: pwsh
         timeout-minutes: 10
@@ -74,7 +75,7 @@ jobs:
           path: addons/godot_servo/bin/windows/
           if-no-files-found: error
 
-  # ビルドが壊れていないかを見る。実機での確認は別途行う。
+  # Checks that the build is not broken. Running on hardware happens separately.
   unix:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -108,10 +109,10 @@ jobs:
           path: addons/godot_servo/bin/
           if-no-files-found: error
 
-  # GPU 共有 (AHardwareBuffer) は Compatibility レンダラでのみ成立し、
-  # Forward+ / Mobile では CPU リードバックに落ちる。
-  # arm64-v8a だけ作る。x86_64 の Android はエミュレータと ChromeOS くらいにしか
-  # 残っておらず、書き出しプリセットもリリースも arm64-v8a しか扱わない。
+  # GPU sharing through AHardwareBuffer only works on the Compatibility renderer;
+  # Forward+ and Mobile fall back to CPU readback.
+  # Only arm64-v8a is built. x86_64 Android survives on emulators and ChromeOS and
+  # little else, and neither the export preset nor the release covers it.
   android:
     name: Build (Android arm64-v8a)
     runs-on: ubuntu-latest
@@ -130,13 +131,13 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
-      # ランナーは ANDROID_NDK_ROOT を実際の環境変数として持っている。
-      # `${{ env.* }}` はワークフローの env しか見ないので、ここで移し替える。
+      # The runner has ANDROID_NDK_ROOT as a real environment variable.
+      # `${{ env.* }}` only sees the workflow's own env, so copy it across here.
       - name: Build and stage the addon
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
-          # Android だけ release で作る。debug の .so は 1.5 GB あり、
-          # APK に載せられる大きさではない。
+          # Android alone is built in release. A debug .so is 1.5 GB, far past
+          # what an APK can carry.
           ./scripts/build.sh --release --android
 
       - uses: actions/upload-artifact@v4

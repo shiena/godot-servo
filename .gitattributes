@@ -1,2 +1,2 @@
-# シェルスクリプトは WSL からも直接実行する。CRLF だと shebang が壊れる。
+# Shell scripts are run directly from WSL too, and CRLF breaks the shebang.
 *.sh text eol=lf

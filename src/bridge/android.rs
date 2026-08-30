@@ -1,26 +1,26 @@
-//! Android の GPU 共有経路。
+//! The Android GPU sharing path.
 //!
-//! 共有の器は `AHardwareBuffer`。Android で GPU バッファをプロセスや API を
-//! またいで受け渡すための仕組みで、Windows の D3D11 共有テクスチャや macOS の
-//! IOSurface にあたる。
+//! The shared container is an `AHardwareBuffer`: Android's way of handing a GPU
+//! buffer between processes and APIs, the counterpart of a D3D11 shared texture
+//! on Windows or an IOSurface on macOS.
 //!
-//! surfman も Android では内部で `AHardwareBuffer` を使っているが、その中身は
-//! `pub(crate)` で外から取れない。そこで Windows と同じく**自前で 1 枚確保して
-//! そこへ blit する**。
+//! Surfman uses `AHardwareBuffer` internally on Android too, but keeps it
+//! `pub(crate)` and out of reach. So, as on Windows, this **allocates one and
+//! blits into it**.
 //!
-//! 1. `AHardwareBuffer_allocate` でバッファを確保
-//! 2. `eglCreateImageKHR(EGL_NATIVE_BUFFER_ANDROID)` で `EGLImage` にする
-//! 3. Servo 側: `glEGLImageTargetTexture2DOES` で GL テクスチャにし、毎フレーム
-//!    Servo の FBO から blit する
-//! 4. Godot 側: 同じ `EGLImage` を `ExternalTexture` に渡す。Godot はこれを
-//!    `GL_TEXTURE_EXTERNAL_OES` として受け取る
+//! 1. Allocate the buffer with `AHardwareBuffer_allocate`
+//! 2. Turn it into an `EGLImage` with `eglCreateImageKHR(EGL_NATIVE_BUFFER_ANDROID)`
+//! 3. Servo side: bind it as a GL texture with `glEGLImageTargetTexture2DOES` and
+//!    blit Servo's FBO into it every frame
+//! 4. Godot side: hand the same `EGLImage` to an `ExternalTexture`, which Godot
+//!    receives as a `GL_TEXTURE_EXTERNAL_OES`
 //!
-//! `EGLImage` を 1 つで済ませているのは、Android の EGLDisplay が実質 1 つしか
-//! ないため。同じ display 上の `EGLImage` はコンテキストをまたいで共有できる。
+//! One `EGLImage` is enough because Android effectively has a single EGLDisplay,
+//! and `EGLImage`s on the same display are shareable across contexts.
 //!
-//! この経路は **Compatibility (GLES3) レンダラでのみ動く**。Forward+ / Mobile は
-//! `RenderingDevice` 側の `texture_external_initialize()` が空実装なので、
-//! そちらでは CPU リードバックに落ちる。
+//! This path **only works with the Compatibility (GLES3) renderer**. Under
+//! Forward+ and Mobile, `texture_external_initialize()` in the `RenderingDevice`
+//! backend is a stub, so those fall back to CPU readback.
 
 use std::ffi::{c_void, CString};
 
@@ -32,7 +32,7 @@ use godot::prelude::*;
 use super::TextureBridge;
 use crate::rendering_context::GodotRenderingContext;
 
-// ── Android / EGL の定数 ──────────────────────────────────────────────────
+// ── Android / EGL constants ──────────────────────────────────────────────
 
 const AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM: u32 = 1;
 const AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE: u64 = 1 << 8;
@@ -61,7 +61,7 @@ unsafe extern "C" {
     fn AHardwareBuffer_release(buffer: *mut c_void);
 }
 
-/// EGL / GLES の拡張関数。surfman の `get_proc_address` から引く。
+/// EGL / GLES extension entry points, resolved through surfman's `get_proc_address`.
 struct EglExtensions {
     get_current_display: unsafe extern "C" fn() -> *mut c_void,
     get_native_client_buffer: unsafe extern "C" fn(*const c_void) -> *mut c_void,
@@ -84,7 +84,8 @@ impl EglExtensions {
             Ok(pointer)
         }
 
-        // SAFETY: いずれも EGL / GLES の標準的な関数で、シグネチャは仕様どおり。
+        // SAFETY: all standard EGL / GLES entry points, with the signatures the
+        // specification gives them.
         unsafe {
             Ok(Self {
                 get_current_display: std::mem::transmute(require(load, "eglGetCurrentDisplay")?),
@@ -103,15 +104,15 @@ impl EglExtensions {
     }
 }
 
-// ── 橋 ────────────────────────────────────────────────────────────────────
+// ── The bridge ───────────────────────────────────────────────────────────
 
 pub struct AndroidBridge {
-    /// 解放時に `eglDestroyImageKHR` を呼ぶために持っておく。
+    /// Kept so that `eglDestroyImageKHR` can be called on release.
     egl: EglExtensions,
     buffer: *mut c_void,
     display: *mut c_void,
     image: *mut c_void,
-    /// Servo 側から書き込むための GL テクスチャ。`image` を貼ったもの。
+    /// The GL texture Servo writes through, with `image` bound to it.
     gl_texture: glow::Texture,
     texture: Gd<ExternalTexture>,
     size: PhysicalSize<u32>,
@@ -123,7 +124,7 @@ impl AndroidBridge {
         size: PhysicalSize<u32>,
         host: &crate::gl_guard::HostContext,
     ) -> Result<Self, String> {
-        // Servo の GL コンテキストをカレントにしてから EGL を触る。
+        // Make Servo's GL context current before touching EGL.
         context
             .make_current_public()
             .map_err(|error| format!("make_current failed: {error:?}"))?;
@@ -138,8 +139,9 @@ impl AndroidBridge {
         drop(gl_context);
         drop(device);
 
-        // SAFETY: 以降は EGL / AHardwareBuffer の素の API を順に呼ぶだけ。
-        // 途中で失敗したら確保済みのものを解放してから返す。
+        // SAFETY: what follows is a straight sequence of raw EGL and
+        // AHardwareBuffer calls. Anything already allocated is released before
+        // returning on failure.
         unsafe {
             let buffer = allocate_buffer(size)?;
 
@@ -168,7 +170,7 @@ impl AndroidBridge {
                 return Err("eglCreateImageKHR failed".into());
             }
 
-            // Servo が書き込む先の GL テクスチャ。
+            // The GL texture Servo will write into.
             let gl = context.glow();
             let gl_texture = gl
                 .create_texture()
@@ -187,14 +189,14 @@ impl AndroidBridge {
             );
             gl.bind_texture(glow::TEXTURE_2D, None);
 
-            // ここから先は Godot 側の GL 呼び出しになる。`ExternalTexture` は
-            // 内部で `glEGLImageTargetTexture2DOES` を呼ぶので、Servo のコンテキストが
-            // カレントなまま作ると Godot ではない側にテクスチャができてしまう。
-            // 先に Godot のコンテキストへ戻す。
+            // From here on the GL calls belong to Godot. `ExternalTexture` calls
+            // `glEGLImageTargetTexture2DOES` internally, so creating it while
+            // Servo's context is current would put the texture on the wrong
+            // context. Hand the thread back first.
             host.restore();
 
-            // 同じ EGLImage を Godot に渡す。`ExternalTexture` は Texture2D なので
-            // マテリアルにそのまま挿せる。
+            // Give Godot the same EGLImage. `ExternalTexture` is a Texture2D, so
+            // it drops straight into a material.
             let mut texture = ExternalTexture::new_gd();
             texture.set_size(Vector2::new(size.width as f32, size.height as f32));
             texture.set_external_buffer_id(image as u64);
@@ -212,11 +214,11 @@ impl AndroidBridge {
     }
 }
 
-/// AHardwareBuffer を 1 枚確保する。
+/// Allocate one AHardwareBuffer.
 ///
 /// # Safety
 ///
-/// 呼び出し側が返り値を `AHardwareBuffer_release` で解放すること。
+/// The caller must release the result with `AHardwareBuffer_release`.
 unsafe fn allocate_buffer(size: PhysicalSize<u32>) -> Result<*mut c_void, String> {
     let descriptor = AHardwareBufferDesc {
         width: size.width,
@@ -243,7 +245,7 @@ impl TextureBridge for AndroidBridge {
 
     fn update(&mut self, context: &GodotRenderingContext) -> Result<(), String> {
         let source_fbo = context.framebuffer();
-        // SAFETY: GL のコンテキストはカレントで、テクスチャは生きている。
+        // SAFETY: the GL context is current and the texture is alive.
         unsafe { blit_flipped(context.glow(), source_fbo, self.gl_texture, self.size) }
     }
 
@@ -256,7 +258,8 @@ impl TextureBridge for AndroidBridge {
     }
 
     fn release(&mut self) {
-        // SAFETY: いずれも自分で確保したもの。二重解放しないよう null にする。
+        // SAFETY: everything here was allocated above. Nulled out so a second
+        // call cannot double free.
         unsafe {
             if !self.image.is_null() && !self.display.is_null() {
                 (self.egl.destroy_image)(self.display, self.image);
@@ -270,11 +273,11 @@ impl TextureBridge for AndroidBridge {
     }
 }
 
-/// Servo の FBO を共有バッファへ上下反転して転送する。
+/// Blit Servo's FBO into the shared buffer, flipping it vertically.
 ///
 /// # Safety
 ///
-/// `gl` のコンテキストがカレントで、`gl_texture` が有効であること。
+/// `gl`'s context must be current and `gl_texture` must be valid.
 unsafe fn blit_flipped(
     gl: &glow::Context,
     source_fbo: u32,

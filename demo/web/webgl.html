@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>WebGL check</title>
@@ -11,11 +11,12 @@
 </style>
 </head>
 <body>
-<div id="hud">初期化中…</div>
+<div id="hud">Initialising...</div>
 <canvas id="gl"></canvas>
 <script>
-// three.js を挟まない素の WebGL。回転する三角形を描くだけ。
-// 「WebGL のコンテキストが取れて、実際に GPU で描けているか」だけを見る。
+// Plain WebGL, with no three.js in the way. Draws one spinning triangle.
+// It answers a single question: does a WebGL context come back, and does the GPU
+// actually draw with it?
 const hud = document.getElementById('hud');
 const canvas = document.getElementById('gl');
 canvas.width = window.innerWidth;
@@ -23,7 +24,7 @@ canvas.height = window.innerHeight;
 
 const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
 if (!gl) {
-  hud.textContent = 'WebGL コンテキストが取れない';
+  hud.textContent = 'no WebGL context';
   godot.emit('webgl', { ok: false, reason: 'no context' });
 } else {
   const version = gl.getParameter(gl.VERSION);

@@ -1,27 +1,28 @@
 extends RefCounted
-## デモのページをブラウザから開ける場所に用意する。
+## Puts the demo pages somewhere the browser can open them.
 ##
-## `class_name` は使わない。グローバルクラス表はエディタが作るもので、
-## `--import` だけを走らせた環境には無いことがある。表が無いと
-## 「Identifier not declared」で読み手のスクリプトごと解析に失敗するので、
-## 使う側は `preload()` でパスから直接掴む。
+## No `class_name` here. The global class table is written by the editor and may
+## be missing on a checkout that has only run `--import`. Without it the script
+## that refers to this one fails to parse with "Identifier not declared", so
+## callers reach it through `preload()` and a path instead.
 ##
-## エディタから実行しているときは `res://` がそのまま実ファイルなので何もしない。
-## 書き出したあとは PCK の中に入っていて実体が無く、Servo に `file://` で渡しても
-## `Opening file failed` になる。その場合だけ `user://` へ展開する。
+## Running from the editor, `res://` is a real file on disk and nothing needs
+## doing. After an export the pages live inside the PCK with no file behind them,
+## and handing Servo a `file://` URL gives `Opening file failed`. Only then are
+## they unpacked into `user://`.
 
 
-## `res://demo/web/<name>.html` を開ける URL にして返す。
-## `http` で始まる文字列はそのまま URL として扱う。
+## Returns a URL that opens `res://demo/web/<name>.html`.
+## A string starting with `http` is used as a URL as it is.
 static func page_url(page: String) -> String:
 	if page.begins_with("http"):
 		return page
 
 	var source_dir := "res://demo/web"
 	var absolute := ProjectSettings.globalize_path(source_dir)
-	# 判定は `OS.has_feature("editor")` で行う。書き出し後の Android では
-	# `globalize_path()` が `res://…` をそのまま返し、`FileAccess.file_exists()` は
-	# PCK の中を見て true になるので、パスの有無では区別できない。
+	# The test has to be `OS.has_feature("editor")`. On an exported Android build
+	# `globalize_path()` hands `res://...` straight back, and `FileAccess.file_exists()`
+	# looks inside the PCK and returns true, so the path itself tells us nothing.
 	if not OS.has_feature("editor"):
 		absolute = ProjectSettings.globalize_path("user://web")
 		_mirror(source_dir, "user://web")
@@ -30,7 +31,7 @@ static func page_url(page: String) -> String:
 	return "file:///" + path.replace("\\", "/").trim_prefix("/")
 
 
-## `from` の中身を `to` へ再帰的に複製する。
+## Copies everything under `from` into `to`, recursively.
 static func _mirror(from: String, to: String) -> void:
 	DirAccess.make_dir_recursive_absolute(to)
 	var dir := DirAccess.open(from)
@@ -42,7 +43,7 @@ static func _mirror(from: String, to: String) -> void:
 		_mirror(from.path_join(name), to.path_join(name))
 
 	for name in dir.get_files():
-		# 書き出し時にテキストは .remap が付くことがあるので剥がす。
+		# Exporting can append .remap to text files. Strip it back off.
 		var source := from.path_join(name)
 		var destination := to.path_join(name.trim_suffix(".remap"))
 		if FileAccess.file_exists(destination):

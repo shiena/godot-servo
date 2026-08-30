@@ -1,20 +1,20 @@
 # Rust
 /target/
-# Cargo.lock は commit する。この crate は最終成果物 (GDExtension の共有ライブラリ) を
-# 作るので、固定した lockfile があると CI とリリースが再現する。
+# Cargo.lock is committed. This crate produces a final artifact, the GDExtension
+# shared library, so a pinned lockfile makes CI and releases reproducible.
 
 # Godot
 /.godot/*
-# エディタを開かずに CLI から実行する場合、これが無いと拡張が読み込まれない。
+# Without this, running from the CLI without opening the editor loads no extension.
 !/.godot/extension_list.cfg
 *.import
 
-# ビルド成果物。scripts/build.ps1 / build.sh が置く。
+# Build output, placed by scripts/build.ps1 and build.sh.
 /addons/godot_servo/bin/
 
-# ローカルの作業ファイル
+# Local working files
 *.log
-# Godot のバージョンマネージャが置くローカル設定
+# Local settings written by Godot version managers
 .godotrc
 /httpd.log
 

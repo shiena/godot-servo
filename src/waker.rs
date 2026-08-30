@@ -1,7 +1,8 @@
-//! Servo が「イベントループを回してくれ」と通知してくるためのフック。
+//! The hook Servo uses to ask for the event loop to be pumped.
 //!
-//! Servo は自前のスレッド群から `wake()` を呼ぶので、ここではフラグを立てるだけに
-//! とどめ、実際の `spin_event_loop()` は Godot のメインスレッド (`_process`) で行う。
+//! Servo calls `wake()` from its own threads, so all that happens here is
+//! setting a flag. The actual `spin_event_loop()` runs on Godot's main thread,
+//! in `_process`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -18,7 +19,7 @@ impl GodotWaker {
         Self::default()
     }
 
-    /// フラグを読んで下ろす。立っていたら `spin_event_loop()` を呼ぶ。
+    /// Read the flag and clear it. When it was set, call `spin_event_loop()`.
     pub fn take_pending(&self) -> bool {
         self.pending.swap(false, Ordering::AcqRel)
     }

@@ -78,16 +78,16 @@ jobs:
         with:
           path: staged
 
-      # 配布物は「プロジェクトに置くだけで動く」形にする。中身は addons/godot_servo/
-      # ひとつだけなので、既存のプロジェクトには addons/ を重ねれば入る。
+      # The archive is shaped so that dropping it into a project just works. It
+      # holds one thing, addons/godot_servo/, so merging addons/ installs it.
       - name: Assemble the addon package
         run: |
           NAME="godot-servo-${{ needs.prepare.outputs.version }}"
           mkdir -p "$NAME/addons/godot_servo"
           cp addons/godot_servo/README.md "$NAME/addons/godot_servo/"
-          # .gdextension はアドオンの中に入れる。中の res:// パスは絶対なので、
-          # ファイル自体はどこに置いてもよい。ルートにも置くと同じ拡張が二重に
-          # 登録されるので、1 か所だけにする。
+          # The .gdextension goes inside the addon. Its res:// paths are absolute,
+          # so the file itself can sit anywhere. A second copy at the root would
+          # register the same extension twice, so keep exactly one.
           cp godot_servo.gdextension godot_servo.gdextension.uid "$NAME/addons/godot_servo/"
           cp README.md README_ja.md LICENSE* "$NAME/" 2>/dev/null || true
           for platform in windows macos linux; do
@@ -99,7 +99,7 @@ jobs:
           zip -r "$NAME.zip" "$NAME"
           echo "ARCHIVE=$NAME.zip" >> "$GITHUB_ENV"
 
-      # そのまま起動できるデモ。アドオン一式にデモのシーンとページを足したもの。
+      # A demo that runs as it is: the addon plus the demo scenes and pages.
       - name: Assemble the demo project
         run: |
           NAME="godot-servo-demo-${{ needs.prepare.outputs.version }}"

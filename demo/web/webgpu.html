@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>WebGPU check</title>
@@ -11,7 +11,7 @@
 </style>
 </head>
 <body>
-<div id="hud">初期化中…</div>
+<div id="hud">Initialising...</div>
 <canvas id="gpu"></canvas>
 <script>
 const hud = document.getElementById('hud');
@@ -36,7 +36,7 @@ window.addEventListener('unhandledrejection', function (e) {
 (async function () {
   step('start', { hasGpu: !!navigator.gpu, secure: window.isSecureContext });
   if (!navigator.gpu) {
-    fail('navigator.gpu が無い');
+    fail('no navigator.gpu');
     return;
   }
   try {
@@ -44,7 +44,7 @@ window.addEventListener('unhandledrejection', function (e) {
     const adapter = await navigator.gpu.requestAdapter();
     step('adapter', { got: !!adapter });
     if (!adapter) {
-      fail('requestAdapter が null');
+      fail('requestAdapter returned null');
       return;
     }
     const device = await adapter.requestDevice();
@@ -52,7 +52,7 @@ window.addEventListener('unhandledrejection', function (e) {
     const context = canvas.getContext('webgpu');
     step('context', { got: !!context });
     if (!context) {
-      fail("getContext('webgpu') が null");
+      fail("getContext('webgpu') returned null");
       return;
     }
 

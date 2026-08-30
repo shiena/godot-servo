@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>three.js r128</title>
@@ -11,11 +11,11 @@
 </style>
 </head>
 <body>
-<div id="hud">初期化中…</div>
+<div id="hud">Initialising...</div>
 <script src="./vendor/three.r128.js"></script>
 <script>
-// three.js は r163 で WebGL1 対応を落としている。Servo が WebGL 2.0 を出さない
-// 環境でも動く世代として r128 を置いてある。
+// three.js dropped WebGL1 support in r163. r128 is kept here as a generation that
+// still runs where Servo does not offer WebGL 2.0.
 const hud = document.getElementById('hud');
 
 try {

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>three.js 0.180</title>
@@ -11,7 +11,7 @@
 </style>
 </head>
 <body>
-<div id="hud">初期化中…</div>
+<div id="hud">Initialising...</div>
 <script type="module">
 import * as THREE from './vendor/three.module.js';
 const hud = document.getElementById('hud');
@@ -22,7 +22,8 @@ function fail(reason) {
 }
 
 try {
-  // 静的 import。動的 import() が使えるかとは別問題として切り分ける。
+  // A static import, kept separate from the question of whether dynamic import()
+  // works.
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);

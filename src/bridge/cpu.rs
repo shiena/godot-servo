@@ -1,12 +1,13 @@
-//! どこでも動くフォールバック。
+//! The fallback that works everywhere.
 //!
-//! `glReadPixels` で GPU からピクセルを吸い出し、`ImageTexture` に流し込む。
-//! GPU→CPU→GPU の往復が入るので当然遅いが、レンダラを問わず動く。
-//! GPU 共有が使えない環境でも拡張が起動しないという事態を避けるためにある。
+//! `glReadPixels` pulls the pixels off the GPU and they go into an
+//! `ImageTexture`. The GPU-CPU-GPU round trip makes it slow, but it works
+//! whatever the renderer is, so the extension never fails to start just because
+//! GPU sharing is unavailable.
 //!
-//! 往復そのものは減らせないので、せめて毎フレームの確保は起こさない。
-//! ピクセルの置き場と `Image` を 2 組持ち、フレームごとに交互に使う。詳細は
-//! [`CpuBridge::update`] を参照。
+//! The round trip itself cannot be avoided, but the per-frame allocation can.
+//! Two sets of pixel buffer and `Image` alternate frame by frame; see
+//! [`CpuBridge::update`].
 
 use dpi::PhysicalSize;
 use godot::classes::image::Format;
@@ -18,9 +19,9 @@ use crate::rendering_context::GodotRenderingContext;
 
 pub struct CpuBridge {
     texture: Gd<ImageTexture>,
-    /// ピクセルの置き場と、それを指す `Image`。添字が揃っている。
+    /// The pixel buffers and the `Image` pointing at each, index-aligned.
     frames: [Frame; 2],
-    /// 直近に `texture` へ渡した `frames` の添字。
+    /// Index of the frame most recently handed to `texture`.
     current: usize,
     size: PhysicalSize<u32>,
 }
@@ -62,16 +63,17 @@ impl TextureBridge for CpuBridge {
         self.texture.clone().upcast()
     }
 
-    /// 1 フレーム分を読み出して `ImageTexture` に反映する。
+    /// Read one frame back and push it into the `ImageTexture`.
     ///
-    /// 書き込む先を毎フレーム入れ替えているのは、確保も複製も起こさないため。
-    /// `PackedByteArray` は copy-on-write なので、`Image` が参照している側に書くと
-    /// そこで複製が走る。直前に使った側には触らず、もう一方に書けば参照は 1 つのままで、
-    /// `glReadPixels` の出力先がそのままテクスチャの中身になる。
+    /// The destination alternates every frame so that nothing is allocated or
+    /// copied. `PackedByteArray` is copy-on-write, so writing into the buffer the
+    /// `Image` currently references would duplicate it. Leaving that one alone
+    /// and writing into the other keeps the reference count at 1, and the
+    /// destination of `glReadPixels` becomes the texture's contents directly.
     ///
-    /// レンダリングサーバが別スレッドの場合、`texture.update()` はコマンドキューに
-    /// 積まれるだけで、実際に読まれるのは最大 1 フレーム遅れる。2 組あれば、
-    /// 読まれるのを待っている側を上書きすることはない。
+    /// When the rendering server runs on its own thread, `texture.update()` only
+    /// queues a command and the data is read up to one frame later. Two sets are
+    /// enough that the side still waiting to be read is never overwritten.
     fn update(&mut self, context: &GodotRenderingContext) -> Result<(), String> {
         let next = self.current ^ 1;
         let frame = &mut self.frames[next];

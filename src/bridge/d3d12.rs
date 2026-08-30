@@ -1,20 +1,21 @@
-//! Windows / D3D12 の GPU 共有経路。
+//! The Windows / D3D12 GPU sharing path.
 //!
-//! ANGLE (Servo 側) は D3D11、Godot は D3D12 なので、その間を DXGI の共有 NT
-//! ハンドルで繋ぐ。
+//! ANGLE, on Servo's side, is D3D11 while Godot is D3D12, so a shared DXGI NT
+//! handle joins the two.
 //!
-//! 1. ANGLE の `ID3D11Device` 上に `SHARED | SHARED_NTHANDLE` のテクスチャを確保
-//! 2. `IDXGIResource1::CreateSharedHandle` で NT ハンドルを export
-//! 3. Godot の `ID3D12Device::OpenSharedHandle` で開く
-//! 4. `RenderingDevice.texture_create_from_extension` で Godot のテクスチャにする
+//! 1. Allocate a `SHARED | SHARED_NTHANDLE` texture on ANGLE's `ID3D11Device`
+//! 2. Export an NT handle with `IDXGIResource1::CreateSharedHandle`
+//! 3. Open it on Godot's `ID3D12Device::OpenSharedHandle`
+//! 4. Wrap it as a Godot texture with `RenderingDevice.texture_create_from_extension`
 //!
-//! 毎フレーム、共有テクスチャを一時的な EGL pbuffer として包み、Servo の FBO を
-//! 上下反転しつつ blit する。D3D11 テクスチャ自体は使い回すので、Godot 側の RID は
-//! 変わらない。
+//! Every frame the shared texture is wrapped as a temporary EGL pbuffer and
+//! Servo's FBO is blitted into it, flipped vertically. The D3D11 texture itself
+//! is reused, so the RID on Godot's side never changes.
 //!
-//! keyed mutex は付けない。ANGLE が自前で作る pbuffer には mozangle の都合で
-//! keyed mutex が付くが、Godot の `RenderingDevice` からは acquire/release できない。
-//! 自前で確保したテクスチャなら surfman 側の同期方式は `None` になる。
+//! No keyed mutex. The pbuffers ANGLE allocates for itself carry one, the way
+//! mozangle builds it, but Godot's `RenderingDevice` cannot acquire or release
+//! it. Allocating the texture here instead leaves surfman's synchronization
+//! mode as `None`.
 
 use dpi::PhysicalSize;
 use euclid::default::Size2D;
@@ -39,13 +40,13 @@ use super::TextureBridge;
 use crate::rendering_context::GodotRenderingContext;
 
 pub struct D3d12Bridge {
-    /// ANGLE の D3D11 デバイス上の共有テクスチャ。Servo が書き込む側。
+    /// The shared texture on ANGLE's D3D11 device. Servo writes into this one.
     d3d11_texture: ID3D11Texture2D,
-    /// 同じメモリを Godot の D3D12 デバイスで開いたもの。所有権保持のために持つ。
+    /// The same memory opened on Godot's D3D12 device. Held to keep it alive.
     _d3d12_resource: ID3D12Resource,
-    /// 共有リソースを Godot の RD テクスチャとして包んだもの。コピー元。
+    /// The shared resource wrapped as a Godot RD texture. The copy source.
     imported: Rid,
-    /// Godot が自分で確保したテクスチャ。コピー先で、こちらを表示に使う。
+    /// A texture Godot allocated itself. The copy destination, and what is displayed.
     owned: Rid,
     texture: Gd<Texture2Drd>,
     size: PhysicalSize<u32>,
@@ -90,7 +91,7 @@ impl TextureBridge for D3d12Bridge {
         let device = context.device();
         let mut gl_context = context.context_mut();
 
-        // 共有テクスチャを ANGLE から見える形 (EGL pbuffer) に一時的に包む。
+        // Wrap the shared texture in something ANGLE can see: an EGL pbuffer.
         let surface_texture = unsafe {
             let raw = self.d3d11_texture.clone().into_raw();
             let com_ptr = wio::com::ComPtr::from_raw(raw as *mut _);
@@ -110,7 +111,8 @@ impl TextureBridge for D3d12Bridge {
         let blit_result =
             unsafe { blit_flipped(context.glow(), source_fbo, gl_texture, self.size) };
 
-        // 包みは毎フレーム捨てる。中身の D3D11 テクスチャは COM 参照で生き続ける。
+        // The wrapper is thrown away every frame. The D3D11 texture inside stays
+        // alive through its COM reference.
         let mut surface = device
             .destroy_surface_texture(&mut gl_context, surface_texture)
             .map_err(|(error, _)| format!("destroy_surface_texture: {error:?}"))?;
@@ -119,17 +121,17 @@ impl TextureBridge for D3d12Bridge {
             .map_err(|error| format!("destroy_surface: {error:?}"))?;
         blit_result?;
 
-        // 取り込んだテクスチャを Godot 所有のテクスチャへ複製する。
+        // Copy the imported texture into the Godot-owned one.
         //
-        // 遠回りに見えるが必要。Godot の D3D12 ドライバは
-        // `texture_create_shared()` で「アロケーションを持つテクスチャ」しか
-        // 受け付けず (`_texture_create_shared_from_slice` の DEBUG_ENABLED 判定)、
-        // 外部から取り込んだテクスチャは弾かれる。`Texture2DRD` は内部で
-        // その共有ビューを作るので、取り込んだテクスチャを直接渡すと白く抜ける。
-        // Vulkan ドライバは `created_from_extension` を明示的に許可しているので、
-        // これは D3D12 ドライバ側の穴。
+        // The detour looks pointless but is required. Godot's D3D12 driver only
+        // accepts textures that own an allocation in `texture_create_shared()`
+        // (the DEBUG_ENABLED check in `_texture_create_shared_from_slice`) and
+        // rejects imported ones. `Texture2DRD` creates that shared view
+        // internally, so handing it the imported texture renders white. The
+        // Vulkan driver explicitly permits `created_from_extension`, which makes
+        // this a gap in the D3D12 driver.
         //
-        // コピーは GPU 上で完結するので CPU 往復は発生しない。
+        // The copy stays on the GPU, so no CPU round trip appears.
         let mut rendering_device = RenderingServer::singleton()
             .get_rendering_device()
             .ok_or("no RenderingDevice")?;
@@ -168,7 +170,7 @@ impl TextureBridge for D3d12Bridge {
     }
 }
 
-/// 共有された `ID3D12Resource` を Godot の RD テクスチャとして包む。コピー元専用。
+/// Wrap the shared `ID3D12Resource` as a Godot RD texture. Copy source only.
 fn import_rd_texture(
     rendering_device: &mut Gd<RenderingDevice>,
     resource: &ID3D12Resource,
@@ -192,7 +194,7 @@ fn import_rd_texture(
     }
 }
 
-/// 表示に使う、Godot 所有のテクスチャ。
+/// The Godot-owned texture that is actually displayed.
 fn create_owned_rd_texture(
     rendering_device: &mut Gd<RenderingDevice>,
     size: PhysicalSize<u32>,
@@ -221,11 +223,11 @@ fn create_owned_rd_texture(
     }
 }
 
-/// ANGLE の D3D11 デバイス上に共有テクスチャを作り、Godot の D3D12 デバイスで開く。
+/// Create a shared texture on ANGLE's D3D11 device and open it on Godot's D3D12 one.
 ///
 /// # Safety
 ///
-/// `godot_device` は生存中の `ID3D12Device*` でなければならない。
+/// `godot_device` must be a live `ID3D12Device*`.
 unsafe fn create_shared_texture(
     d3d11_device: &ID3D11Device,
     godot_device: u64,
@@ -244,7 +246,7 @@ unsafe fn create_shared_texture(
         Usage: D3D11_USAGE_DEFAULT,
         BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
         CPUAccessFlags: 0,
-        // KEYEDMUTEX は付けない。Godot 側で acquire できないため。
+        // No KEYEDMUTEX: Godot has no way to acquire it.
         MiscFlags: (D3D11_RESOURCE_MISC_SHARED.0 | D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0) as u32,
     };
 
@@ -270,7 +272,7 @@ unsafe fn create_shared_texture(
         .OpenSharedHandle(nt_handle, &mut opened)
         .map_err(|error| format!("D3D12 OpenSharedHandle: {error}"));
 
-    // 両側で開き終わったので、こちらの複製は閉じてよい。
+    // Both sides have opened it, so this duplicate can be closed.
     let _ = CloseHandle(nt_handle);
     open_result?;
 
@@ -278,13 +280,14 @@ unsafe fn create_shared_texture(
     Ok((d3d11_texture, d3d12_resource))
 }
 
-/// Servo の FBO を共有テクスチャへ上下反転して転送する。
+/// Blit Servo's FBO into the shared texture, flipping it vertically.
 ///
-/// 明示的なセマフォが使えないので、転送後に `glFlush` で同期の代わりとする。
+/// No explicit semaphore is available, so a `glFlush` afterwards stands in for
+/// synchronization.
 ///
 /// # Safety
 ///
-/// `gl` のコンテキストがカレントで、`gl_texture` が有効であること。
+/// `gl`'s context must be current and `gl_texture` must be valid.
 unsafe fn blit_flipped(
     gl: &glow::Context,
     source_fbo: u32,
@@ -306,7 +309,7 @@ unsafe fn blit_flipped(
 
     let width = size.width as i32;
     let height = size.height as i32;
-    // GL は左下原点、D3D は左上原点。転送のついでに反転する。
+    // GL's origin is bottom-left, D3D's is top-left. Flip on the way through.
     gl.blit_framebuffer(
         0,
         0,

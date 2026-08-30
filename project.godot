@@ -25,7 +25,7 @@ window/size/viewport_height=720
 
 [rendering]
 
-; Android の AHardwareBuffer 共有経路は Compatibility レンダラでのみ成立する。
+; The AHardwareBuffer sharing path on Android only works on the Compatibility renderer.
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 rendering_device/driver.windows="d3d12"

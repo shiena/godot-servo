@@ -129,13 +129,20 @@ The self check drives the extension end to end and reports what it verified:
 --- godot-servo self check ---
   path: d3d12-shared-nt-handle
   OK   bridge_event (godot.emit)  (expected 'ready')
-  OK   evaluate_javascript / script_result  (button at (95.2, 189.4))
+  OK   evaluate_javascript / script_result  (button at (96.2, 189.4))
   OK   click -> onclick -> bridge_event  (expected 'buy')
   OK   touch tap -> onclick -> bridge_event  (expected 'buy')
-  OK   touch drag -> scroll  (scrollTop 0 -> 429)
+  OK   touch drag -> scroll  (scrollTop 0 -> 476)
   OK   focus input -> ime_requested  (caret [P: (28.0, 509.0), S: (220.0, 36.0)])
   OK   ime composition -> input value  (value '日本語')
   OK   os ime sequence -> committed once  (value '日本')
+  OK   alert -> dialog_alert  (message 'hello from the page')
+  OK   respond_to_dialog releases the page  (no pending)
+  OK   confirm -> respond_to_dialog(true)  (value true)
+  OK   prompt -> dialog_prompt  (default 'hero')
+  OK   prompt -> respond_to_dialog(text)  (value 'godot')
+  OK   select -> select_element_requested  (4 options, last group 'Advanced')
+  OK   respond_to_select sets the value  (value 'sage')
   OK   wheel -> scroll  (scrollTop 0 -> 608)
 --- 0 failed ---
 ```
@@ -230,6 +237,34 @@ pass the preedit, then an empty string, then send the committed characters throu
 `compositionend` handler only clears the selection when the data is empty, and its composition API
 offers no way to delete the preedit, so there is nothing to send.
 
+### Answer the page's dialogs and pickers
+
+`alert()`, `confirm()`, `prompt()` and `<select>` all block the page's JavaScript
+until the embedder answers, and the extension has no UI of its own to answer with.
+Each arrives as a signal for the game to present however it likes, and the game
+answers:
+
+```gdscript
+browser.dialog_confirm.connect(func(message: String) -> void:
+    var accepted: bool = await my_dialog.ask(message)
+    browser.respond_to_dialog(accepted, "")
+)
+
+browser.select_element_requested.connect(func(options: Array, multiple: bool) -> void:
+    # options: [{ id, label, disabled, group }, ...], with <optgroup>s flattened.
+    var chosen: int = await my_menu.pick(options)
+    browser.respond_to_select([chosen])
+)
+```
+
+Always answer. A page waiting on a dialog nobody answered is stuck for good, so
+call `cancel_pending_dialog()` when the game's own UI closes without a choice;
+`has_pending_dialog()` reports whether anything is waiting. Because the text comes
+from the page, present it so it cannot be mistaken for the game's own UI.
+
+The file picker, the colour picker, and the context menu are not surfaced. Servo
+receives the default answer for those, choosing nothing, and the page carries on.
+
 ### Send events from the page to Godot
 
 The extension injects `window.godot` into every page.
@@ -259,11 +294,13 @@ in `request_navigation` and denies it.
 | `evaluate_javascript(code) -> int` | The result arrives on `script_result(id, value)` |
 | `feed_input(event, position)`, `notify_pointer_left()` | Input |
 | `feed_ime_composition(state, text)`, `feed_ime_preedit(text)`, `cancel_ime_composition()` | IME |
+| `respond_to_dialog(accepted, text)`, `respond_to_select(ids)`, `cancel_pending_dialog()`, `has_pending_dialog()` | Dialogs and pickers |
 | `set_view_size_px(size)` | Resolution |
 
 Signals: `frame_updated`, `title_changed`, `url_changed`, `load_started`, `load_finished`,
 `cursor_changed`, `console_message`, `bridge_event`, `script_result`, `ime_requested`,
-`ime_dismissed`
+`ime_dismissed`, `crashed`, `dialog_alert`, `dialog_confirm`, `dialog_prompt`,
+`select_element_requested`
 
 ## WebGL
 
@@ -362,6 +399,8 @@ cannot `dlopen` it. `Cargo.toml` therefore declares `tikv-jemalloc-sys` directly
 - **A GPU sharing path for Linux**, which would need
   [godotengine/godot#114940](https://github.com/godotengine/godot/pull/114940) for
   `VK_EXT_external_memory_dma_buf`.
+- **The file picker, colour picker, and context menu.** Servo offers all three, but
+  none is surfaced as a signal yet; they answer with the default, choosing nothing.
 - **Multiple `ServoWebView` nodes.** They share one `Servo` instance by design, but that is untested.
 
 ## Related projects
@@ -376,9 +415,9 @@ unavailable.
 | [emanuelbertey/web-servo-godot](https://github.com/emanuelbertey/web-servo-godot) | CPU readback | none stated |
 | this project | GPU shared texture, CPU fallback | MIT / Apache-2.0 |
 
-If you don't need the GPU path, `web-servo-godot` covers more ground today: more signals, a
-JavaScript API, and working Linux and Android builds. Note it states no license, so it is
-all-rights-reserved by default.
+If you don't need the GPU path, `web-servo-godot` still surfaces more of Servo's embedding API:
+history, focus, favicon, fullscreen, permission and authentication requests, and the file, colour
+and context-menu pickers. Note it states no license, so it is all-rights-reserved by default.
 
 ## License
 
