@@ -9,8 +9,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 godot = { version = "0.5.5", features = ["api-4-4"] }
-servo = { version = "0.5.0", features = ["no-wgl", "webgpu"] }
-surfman = { version = "0.13.0", features = ["chains", "sm-angle-default"] }
+servo = { version = "0.5.0", features = ["webgpu"] }
+surfman = { version = "0.13.0", features = ["chains"] }
 glow = "0.17"
 gleam = "0.15"
 euclid = "0.22"
@@ -21,6 +21,14 @@ rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] 
 log = "0.4"
 
 [target.'cfg(windows)'.dependencies]
+# ANGLE 経路の feature は Windows でのみ立てる。servo の `no-wgl` は
+# `mozangle/egl` を引き、mozangle の build.rs は非 Windows でその feature が
+# 立っていると panic する ("Do not know how to build EGL support for a
+# non-Windows platform.")。cargo は同じ依存をターゲット別に書けて、feature は
+# ターゲットが一致したときだけ合算される。
+servo = { version = "0.5.0", features = ["no-wgl"] }
+surfman = { version = "0.13.0", features = ["sm-angle-default"] }
+
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_Graphics_Direct3D11",

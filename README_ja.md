@@ -29,7 +29,7 @@ Windows / D3D12 で動作を確認済み。
 | プラットフォーム | 経路 | 状態 |
 |---|---|---|
 | Windows / D3D12 | ANGLE の D3D11 共有テクスチャ (NT ハンドル) → `ID3D12Resource` | **動作確認済み** |
-| macOS / Metal | IOSurface → `MTLTexture` | 実装済み・未検証 (Windows でビルドできない) |
+| macOS / Metal | IOSurface → `MTLTexture` | 実装済み・未実行 |
 | Windows / Vulkan (既定) | — | CPU リードバックに落ちる |
 | Linux / Vulkan | — | CPU リードバックに落ちる |
 | その他 | `glReadPixels` → `ImageTexture` | 動作確認済み |

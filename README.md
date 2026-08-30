@@ -40,7 +40,7 @@ Verified on Windows with the Direct3D 12 renderer.
 | Platform | Path | Status |
 | --- | --- | --- |
 | Windows / D3D12 | ANGLE D3D11 shared texture (NT handle) to `ID3D12Resource` | **Verified** |
-| macOS / Metal | IOSurface to `MTLTexture` | Written, never compiled |
+| macOS / Metal | IOSurface to `MTLTexture` | Written, never run |
 | Windows / Vulkan (default) | — | Falls back to CPU readback |
 | Linux / Vulkan | — | Falls back to CPU readback |
 | Anything else | `glReadPixels` to `ImageTexture` | Verified |
