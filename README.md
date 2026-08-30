@@ -74,8 +74,11 @@ scripts/build.ps1 | build.sh     Build, then stage into bin/
 src/                             The GDExtension itself (Rust)
 ```
 
-A release ships two things: `godot_servo.gdextension` and `addons/godot_servo/`. Drop both into your
-own project.
+A release archive contains `addons/godot_servo/` complete, with `bin/` filled in and
+`godot_servo.gdextension` inside it. Merge that one folder into your project. The manifest sits at
+the repository root here only because the repository root is the demo project; the `res://` paths
+inside it are absolute, so either location resolves the same. Keep one copy — two manifests register
+the extension twice.
 
 ## Build
 

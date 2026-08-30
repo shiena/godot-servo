@@ -78,16 +78,18 @@ jobs:
         with:
           path: staged
 
-      # 配布物は「プロジェクトに置くだけで動く」形にする。
-      #   godot_servo.gdextension
-      #   addons/godot_servo/...
+      # 配布物は「プロジェクトに置くだけで動く」形にする。中身は addons/godot_servo/
+      # ひとつだけなので、既存のプロジェクトには addons/ を重ねれば入る。
       - name: Assemble the addon package
         run: |
           NAME="godot-servo-${{ needs.prepare.outputs.version }}"
           mkdir -p "$NAME/addons/godot_servo"
-          cp godot_servo.gdextension "$NAME/"
           cp addons/godot_servo/README.md "$NAME/addons/godot_servo/"
-          cp README.md LICENSE* "$NAME/" 2>/dev/null || true
+          # .gdextension はアドオンの中に入れる。中の res:// パスは絶対なので、
+          # ファイル自体はどこに置いてもよい。ルートにも置くと同じ拡張が二重に
+          # 登録されるので、1 か所だけにする。
+          cp godot_servo.gdextension godot_servo.gdextension.uid "$NAME/addons/godot_servo/"
+          cp README.md README_ja.md LICENSE* "$NAME/" 2>/dev/null || true
           for platform in windows macos linux; do
             src="staged/bin-$platform"
             [ -d "$src" ] || continue
@@ -106,7 +108,7 @@ jobs:
           cp project.godot "$NAME/"
           cp -r demo "$NAME/"
           mkdir -p "$NAME/.godot"
-          echo 'res://godot_servo.gdextension' > "$NAME/.godot/extension_list.cfg"
+          echo 'res://addons/godot_servo/godot_servo.gdextension' > "$NAME/.godot/extension_list.cfg"
           zip -r "$NAME.zip" "$NAME"
           echo "DEMO_ARCHIVE=$NAME.zip" >> "$GITHUB_ENV"
 
