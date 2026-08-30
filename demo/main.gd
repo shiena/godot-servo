@@ -1,17 +1,17 @@
 extends Node3D
-## in-game ブラウザのデモ。
+## The in-game browser demo.
 ##
-## 3D 空間に置いた板に Servo の描画結果を貼り、クリック・スクロール・キー入力を
-## そのまま WebView に転送する。ページ側から飛んでくるイベントは
-## ServoWebView の bridge_event シグナルで受け取る。
+## Puts what Servo rendered on a panel in 3D space and forwards clicks, scrolling
+## and keystrokes straight to the WebView. Events coming back from the page
+## arrive on ServoWebView's bridge_event signal.
 
 const WebAssets = preload("res://demo/web_assets.gd")
 
-## 板の物理サイズ (メートル)。
+## The panel's physical size, in metres.
 const PANEL_SIZE := Vector2(1.92, 1.08)
-## WebView の解像度 (ピクセル)。
+## The WebView resolution, in pixels.
 const VIEW_SIZE := Vector2i(1280, 720)
-## カメラを置く距離。板がだいたい画面いっぱいに映る位置。
+## Where to put the camera: close enough that the panel roughly fills the view.
 const CAMERA_Z := 1.0
 
 var browser: ServoWebView
@@ -21,8 +21,8 @@ var material: StandardMaterial3D
 var external_material: ShaderMaterial
 var hud: RichTextLabel
 
-## 直近にポインタが指していた WebView 内のピクセル座標。
-## キー入力にも座標が要るので覚えておく。
+## The WebView pixel position the pointer last pointed at.
+## Remembered because key events need a position too.
 var last_point := Vector2.ZERO
 var texture_bound := false
 
@@ -49,9 +49,14 @@ func _build_browser() -> void:
 	browser.console_message.connect(_on_console_message)
 	browser.ime_requested.connect(_on_ime_requested)
 	browser.ime_dismissed.connect(_on_ime_dismissed)
+	browser.crashed.connect(_on_crashed)
+	browser.dialog_alert.connect(_on_dialog_alert)
+	browser.dialog_confirm.connect(_on_dialog_confirm)
+	browser.dialog_prompt.connect(_on_dialog_prompt)
+	browser.select_element_requested.connect(_on_select_element_requested)
 
 
-## 開くページを決める。`-- --page webgl` のように渡すと切り替えられる。
+## Decides which page to open. `-- --page webgl` switches it.
 func _local_page_url() -> String:
 	var page := "index"
 	var args := OS.get_cmdline_user_args()
@@ -61,7 +66,7 @@ func _local_page_url() -> String:
 	return WebAssets.page_url(page)
 
 
-# ── シーンの組み立て ──────────────────────────────────────────────────────
+# ── Building the scene ───────────────────────────────────────────────────
 
 func _build_environment() -> void:
 	var environment := Environment.new()
@@ -79,11 +84,12 @@ func _build_environment() -> void:
 	light.rotation_degrees = Vector3(-45.0, -35.0, 0.0)
 	add_child(light)
 
-	# 板が「ゲームの中に置かれている」ことが分かるように、後ろに適当な箱を並べる。
+	# Scatter boxes behind the panel so it reads as sitting inside a game.
 	#
-	# 板の真後ろに置くと隠れて見えない。カメラから見て板の縁が作る影の外側、
-	# つまり左右の帯に振り分ける。影の幅も画面の幅も距離に比例するので、
-	# 奥行きに応じた倍率で置けばどの距離でも帯の中に入る。
+	# Anything directly behind the panel is hidden. These go outside the shadow the
+	# panel's edges cast from the camera, into the bands left and right. Both that
+	# shadow and the visible width grow in proportion to distance, so a factor
+	# scaled by depth lands inside the band whatever the depth is.
 	for i in 8:
 		var depth := randf_range(-6.0, -2.0)
 		var distance := CAMERA_Z - depth
@@ -112,7 +118,7 @@ func _build_panel() -> void:
 	mesh.size = PANEL_SIZE
 
 	material = StandardMaterial3D.new()
-	# UI なのでライティングは効かせない。
+	# This is UI, so leave it unlit.
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	material.albedo_color = Color.WHITE
@@ -123,7 +129,7 @@ func _build_panel() -> void:
 	screen.material_override = material
 	add_child(screen)
 
-	# クリック判定用のあたり。板と同じ大きさの薄い箱。
+	# The click target: a thin box the same size as the panel.
 	var body := StaticBody3D.new()
 	body.name = "Clickable"
 	var shape := CollisionShape3D.new()
@@ -152,7 +158,7 @@ func _build_hud() -> void:
 	hud.add_theme_color_override("default_color", Color(0.85, 0.90, 1.0))
 	layer.add_child(hud)
 
-	_set_hud("起動中…")
+	_set_hud("Starting...")
 
 
 func _set_hud(text: String) -> void:
@@ -160,16 +166,16 @@ func _set_hud(text: String) -> void:
 		hud.text = text
 
 
-# ── 入力の転送 ────────────────────────────────────────────────────────────
+# ── Forwarding input ─────────────────────────────────────────────────────
 
-## 板の上でのマウス・タッチ操作を WebView のピクセル座標に直して渡す。
+## Converts mouse and touch input on the panel to WebView pixels and forwards it.
 func _on_panel_input(_camera: Node, event: InputEvent, position: Vector3, _normal: Vector3, _shape: int) -> void:
 	if browser == null:
 		return
 
 	last_point = _world_to_view_pixels(position)
 
-	# タッチも一緒に渡す。疑似マウスイベントとの重複は拡張側で落としている。
+	# Touch goes through as well; the extension drops the duplicate mouse events.
 	if event is InputEventMouseMotion or event is InputEventMouseButton \
 			or event is InputEventScreenTouch or event is InputEventScreenDrag:
 		browser.feed_input(event, last_point)
@@ -180,10 +186,10 @@ func _on_panel_exited() -> void:
 		browser.notify_pointer_left()
 
 
-## 板の当たり位置 (ワールド座標) を WebView のピクセル座標へ。
+## Turns a hit position on the panel, in world space, into WebView pixels.
 func _world_to_view_pixels(world_position: Vector3) -> Vector2:
 	var local := screen.global_transform.affine_inverse() * world_position
-	# QuadMesh は原点中心。左上を (0,0) にしたいので Y は反転する。
+	# A QuadMesh is centred on its origin. Flip Y to put (0, 0) at the top left.
 	var u := local.x / PANEL_SIZE.x + 0.5
 	var v := 0.5 - local.y / PANEL_SIZE.y
 	return Vector2(u * float(VIEW_SIZE.x), v * float(VIEW_SIZE.y))
@@ -193,23 +199,23 @@ func _unhandled_input(event: InputEvent) -> void:
 	if browser == null:
 		return
 
-	# キー入力には座標が要らないが、API を揃えるため直近の位置を渡しておく。
+	# Key events need no position, but pass the last one to keep the API uniform.
 	if event is InputEventKey:
 		browser.feed_input(event, last_point)
 
 
-# ── Servo からの通知 ──────────────────────────────────────────────────────
+# ── Notifications from Servo ─────────────────────────────────────────────
 
 func _on_frame_updated() -> void:
 	if texture_bound:
 		return
-	# テクスチャの実体は起動中ずっと同じなので、最初の 1 回だけ結びつければよい。
+	# The texture stays the same object for the whole run, so bind it once.
 	var texture: Texture2D = browser.get_texture()
 	if texture == null:
 		return
 	if browser.needs_external_sampler():
-		# Android の共有バッファは GL_TEXTURE_EXTERNAL_OES で届く。`sampler2D` では
-		# 読めないので、`samplerExternalOES` を使うシェーダに差し替える。
+		# Android's shared buffer arrives as a GL_TEXTURE_EXTERNAL_OES, which a
+		# `sampler2D` cannot read. Swap in a shader that uses `samplerExternalOES`.
 		external_material = ShaderMaterial.new()
 		external_material.shader = load("res://demo/servo_external.gdshader")
 		external_material.set_shader_parameter("servo_texture", texture)
@@ -220,7 +226,7 @@ func _on_frame_updated() -> void:
 
 	material.albedo_texture = texture
 	if browser.is_texture_flipped_v():
-		# macOS の IOSurface 共有経路だけ上下が逆に届く。マテリアル側で戻す。
+		# Only the macOS IOSurface path arrives upside down. Undo it in the material.
 		material.uv1_scale = Vector3(1.0, -1.0, 1.0)
 		material.uv1_offset = Vector3(0.0, 1.0, 0.0)
 	texture_bound = true
@@ -241,10 +247,10 @@ func _on_load_finished() -> void:
 
 var _title := ""
 var _url := ""
-var _last_event := "(まだ届いていない)"
+var _last_event := "(nothing yet)"
 
 
-## file:// はローカルの絶対パスがそのまま出てしまうので、ファイル名だけにする。
+## A file:// URL would show a local absolute path, so show just the file name.
 func _short_url(url: String) -> String:
 	if url.begins_with("file://"):
 		return url.get_file()
@@ -256,7 +262,7 @@ func _refresh_hud(title: String, url: String) -> void:
 		_title = title
 	if url != "":
 		_url = url
-	_set_hud("[b]%s[/b]  —  %s\n経路: %s\n直近のイベント: %s" % [
+	_set_hud("[b]%s[/b]  —  %s\npath: %s\nlast event: %s" % [
 		_title,
 		_short_url(_url),
 		browser.get_backend_name() if browser != null else "?",
@@ -264,7 +270,7 @@ func _refresh_hud(title: String, url: String) -> void:
 	])
 
 
-## ページ側の godot.emit() と <a href="godot:..."> がここに届く。
+## Where the page's godot.emit() and <a href="godot:..."> arrive.
 func _on_bridge_event(name: String, payload: String) -> void:
 	_last_event = "%s %s" % [name, payload]
 	_refresh_hud("", "")
@@ -274,42 +280,87 @@ func _on_bridge_event(name: String, payload: String) -> void:
 		"buy":
 			var data: Variant = JSON.parse_string(payload)
 			if data is Dictionary:
-				print("  買った: ", data.get("item", "?"), " / ", data.get("price", 0), "G")
+				print("  bought: ", data.get("item", "?"), " / ", data.get("price", 0), "G")
 		"rename":
 			var data: Variant = JSON.parse_string(payload)
 			if data is Dictionary:
-				print("  名前: ", data.get("name", ""))
+				print("  name: ", data.get("name", ""))
 		"close":
-			print("  閉じる要求 (", payload, ")")
+			print("  close requested (", payload, ")")
 
 
 func _on_console_message(level: String, message: String) -> void:
 	print("godot-servo: [", level, "] ", message)
 
 
+# ── UI requests from the page ────────────────────────────────────────────
+#
+# alert(), confirm(), prompt() and <select> all block the page's JavaScript until
+# they are answered. A real game would raise its own dialog here and call
+# respond_to_dialog() or respond_to_select() when it closes. The demo shows the
+# content on the HUD and answers immediately.
+
+func _on_crashed(reason: String) -> void:
+	_last_event = "page crashed: %s" % reason
+	_refresh_hud("", "")
+	push_error("godot-servo: page crashed: %s" % reason)
+
+
+func _on_dialog_alert(message: String) -> void:
+	_last_event = "alert: %s" % message
+	_refresh_hud("", "")
+	browser.respond_to_dialog(true, "")
+
+
+func _on_dialog_confirm(message: String) -> void:
+	_last_event = "confirm: %s → OK" % message
+	_refresh_hud("", "")
+	browser.respond_to_dialog(true, "")
+
+
+func _on_dialog_prompt(message: String, default_value: String) -> void:
+	_last_event = "prompt: %s → '%s'" % [message, default_value]
+	_refresh_hud("", "")
+	browser.respond_to_dialog(true, default_value)
+
+
+## `options` is an array of `{ id, label, disabled, group }` dictionaries.
+func _on_select_element_requested(options: Array, _allow_multiple: bool) -> void:
+	var labels := PackedStringArray()
+	for option in options:
+		labels.append(option["label"])
+	_last_event = "select: %s -> picking the last one" % ", ".join(labels)
+	_refresh_hud("", "")
+	if options.is_empty():
+		browser.cancel_pending_dialog()
+	else:
+		browser.respond_to_select([options[-1]["id"]])
+
+
 # ── IME ───────────────────────────────────────────────────────────────────
 
-## ページ内のテキスト欄にフォーカスが入ると呼ばれる。
+## Called when a text field in the page takes focus.
 ##
-## 変換候補のウィンドウは OS がウィンドウ座標で出すので、板の中のキャレット位置を
-## 画面座標へ射影して渡す。これをやらないと候補がウィンドウ左上に出る。
+## The OS places the candidate window in window coordinates, so the caret
+## position on the panel has to be projected to screen coordinates and handed
+## over. Without that, candidates appear at the top left of the window.
 func _on_ime_requested(caret: Rect2, _multiline: bool) -> void:
 	if camera == null:
 		return
-	# キャレットの左下 = 候補ウィンドウを出したい位置。
+	# The caret's bottom-left corner is where the candidate window should go.
 	var bottom_left := Vector2(caret.position.x, caret.position.y + caret.size.y)
 	var world := _view_pixels_to_world(bottom_left)
 	browser.ime_anchor = camera.unproject_position(world)
-	_last_event = "IME 有効 (日本語入力できる)"
+	_last_event = "IME on (composed input works)"
 	_refresh_hud("", "")
 
 
 func _on_ime_dismissed() -> void:
-	_last_event = "IME 無効"
+	_last_event = "IME off"
 	_refresh_hud("", "")
 
 
-## `_world_to_view_pixels()` の逆。
+## The inverse of `_world_to_view_pixels()`.
 func _view_pixels_to_world(point: Vector2) -> Vector3:
 	var u := point.x / float(VIEW_SIZE.x)
 	var v := point.y / float(VIEW_SIZE.y)
@@ -320,10 +371,10 @@ func _view_pixels_to_world(point: Vector2) -> Vector3:
 	return screen.global_transform * local
 
 
-# ── 動作確認用 ────────────────────────────────────────────────────────────
+# ── Checking that it works ───────────────────────────────────────────────
 
-## `--screenshot <path>` を付けて起動すると、少し待ってから画面を書き出して終了する。
-## GPU 共有経路で本当に絵が出ているかを目で確かめるための仕掛け。
+## Started with `--screenshot <path>`, waits a moment, writes the screen out and
+## quits. There to confirm by eye that the GPU sharing path really produces an image.
 var _screenshot_path := ""
 var _frames := 0
 
@@ -332,7 +383,7 @@ func _process(_delta: float) -> void:
 	if _screenshot_path == "":
 		return
 	_frames += 1
-	# ページの読み込みと最初の描画が終わるまで少し待つ。
+	# Give the page time to load and produce its first frame.
 	if _frames == 180:
 		await RenderingServer.frame_post_draw
 		var image := get_viewport().get_texture().get_image()

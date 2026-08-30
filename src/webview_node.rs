@@ -1,7 +1,7 @@
-//! Godot 側に見えるノード `ServoWebView`。
+//! `ServoWebView`, the node Godot sees.
 //!
-//! ノード 1 つが Servo の `WebView` 1 枚に対応する。`Servo` 本体はプロセスに 1 つで、
-//! 複数のノードで共有する。
+//! One node corresponds to one Servo `WebView`. There is a single `Servo`
+//! instance per process, shared by every node.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -28,11 +28,12 @@ use crate::gl_guard::HostContext;
 use crate::rendering_context::GodotRenderingContext;
 use crate::waker::GodotWaker;
 
-/// ホイール 1 ノッチあたりのピクセル数。servoshell の値に合わせている。
+/// Pixels per wheel notch, matching the value servoshell uses.
 const WHEEL_LINE_HEIGHT: f64 = 76.0;
 
-/// Godot が入力を変換して作った疑似イベントに入る `device`。
-/// `InputEvent::DEVICE_ID_EMULATION` は GDExtension に出ていないので直接書く。
+/// The `device` on synthetic events Godot builds by converting other input.
+/// `InputEvent::DEVICE_ID_EMULATION` is not exposed to GDExtension, so it is
+/// written out here.
 const DEVICE_ID_EMULATION: i32 = -1;
 
 struct Inner {
@@ -50,47 +51,49 @@ struct Inner {
 pub struct ServoWebView {
     base: Base<Node>,
 
-    /// 起動時に開く URL。
+    /// The URL to open on start.
     #[export]
     #[init(val = GString::from("about:blank"))]
     url: GString,
 
-    /// WebView の解像度 (ピクセル)。
+    /// The WebView resolution, in pixels.
     #[export]
     #[init(val = Vector2i::new(1024, 768))]
     view_size: Vector2i,
 
-    /// `_ready()` で自動的に起動するか。
+    /// Whether to start automatically in `_ready()`.
     #[export]
     #[init(val = true)]
     autostart: bool,
 
-    /// WebGL 2.0 を有効にする。Servo の既定は無効。
+    /// Enable WebGL 2.0. Servo has it off by default.
     #[export]
     #[init(val = true)]
     enable_webgl2: bool,
 
-    /// IME の候補ウィンドウを出す位置 (ウィンドウ座標)。
+    /// Where to put the IME candidate window, in window coordinates.
     ///
-    /// WebView の中のキャレット位置をそのまま使うことはできない。3D の板に貼って
-    /// いる場合、板の中の座標と画面上の位置に対応がないため。`ime_requested`
-    /// シグナルでキャレットの矩形を受け取り、ゲーム側で射影した結果をここに
-    /// 入れてもらう。既定 (0, 0) はウィンドウ左上。
+    /// The caret position inside the WebView cannot be used as it is: on a 3D
+    /// panel there is no correspondence between a position on the panel and one
+    /// on screen. Take the caret rectangle from the `ime_requested` signal,
+    /// project it in the game, and assign the result here. The default (0, 0) is
+    /// the top-left of the window.
     #[export]
     ime_anchor: Vector2,
 
     inner: Option<Inner>,
     next_script_id: i64,
 
-    /// IME を起こしているか。編集可能な要素にフォーカスがある間だけ true。
+    /// Whether the IME is up. True only while an editable element has focus.
     ime_active: bool,
-    /// 変換中か。`CompositionState::Start` を一度だけ送るために持つ。
+    /// Whether a composition is in progress, so `CompositionState::Start` is
+    /// sent exactly once.
     composing: bool,
-    /// 直前の未確定文字列。変化のない通知を捨てるために持つ。
+    /// The previous preedit string, used to drop notifications that changed nothing.
     last_preedit: GString,
-    /// 変換が終わり、確定文字列がキーイベントで届くのを待っている。
+    /// The composition ended and the committed text is expected to arrive as key events.
     awaiting_commit: bool,
-    /// その確定文字列を組み立てる先。
+    /// Where that committed text is assembled.
     pending_commit: String,
 }
 
@@ -110,10 +113,10 @@ impl INode for ServoWebView {
         self.stop();
     }
 
-    /// IME の未確定文字列は入力イベントではなく通知で届く。
+    /// The IME preedit arrives as a notification, not as an input event.
     ///
-    /// 確定した文字列のほうは通常の `InputEventKey` (unicode 付き) として来るので、
-    /// `feed_input()` の既存の経路がそのまま処理する。
+    /// The committed text comes through as ordinary `InputEventKey`s carrying a
+    /// unicode value, which the existing `feed_input()` route already handles.
     fn on_notification(&mut self, what: NodeNotification) {
         if what == NodeNotification::OS_IME_UPDATE && self.ime_active {
             self.sync_preedit();
@@ -123,17 +126,17 @@ impl INode for ServoWebView {
 
 #[godot_api]
 impl ServoWebView {
-    // ── シグナル ────────────────────────────────────────────────────────────
+    // ── Signals ─────────────────────────────────────────────────────────────
 
-    /// テクスチャの中身が更新された。
+    /// The texture's contents changed.
     #[signal]
     fn frame_updated();
 
-    /// ページのタイトルが変わった。
+    /// The page title changed.
     #[signal]
     fn title_changed(title: GString);
 
-    /// 表示中の URL が変わった。
+    /// The displayed URL changed.
     #[signal]
     fn url_changed(url: GString);
 
@@ -143,43 +146,71 @@ impl ServoWebView {
     #[signal]
     fn load_finished();
 
-    /// ページが要求しているカーソル形状が変わった。ホバー判定に使える。
+    /// The cursor shape the page asks for changed. Useful for hover feedback.
     #[signal]
     fn cursor_changed(shape: GString);
 
-    /// `console.log` などの出力。
+    /// Output from `console.log` and friends.
     #[signal]
     fn console_message(level: GString, message: GString);
 
-    /// ページから Godot に投げられたイベント。
+    /// An event the page threw at Godot.
     ///
-    /// ページ側では以下のどちらかで発火する。
+    /// The page raises it either way:
     ///
     /// ```js
-    /// godot.emit("buy", { item: "potion" });   // payload は JSON 文字列で届く
+    /// godot.emit("buy", { item: "potion" });   // payload arrives as a JSON string
     /// ```
     /// ```html
-    /// <a href="godot:buy?item=potion">買う</a>  <!-- payload はクエリ文字列 -->
+    /// <a href="godot:buy?item=potion">Buy</a>  <!-- payload is the query string -->
     /// ```
     #[signal]
     fn bridge_event(name: GString, payload: GString);
 
-    /// `evaluate_javascript()` の結果。`id` は呼び出し時の戻り値と対応する。
+    /// The result of `evaluate_javascript()`. `id` matches that call's return value.
     #[signal]
     fn script_result(id: i64, value: Variant);
 
-    /// ページ内の編集可能な要素にフォーカスが入り、IME を起こした。
+    /// An editable element in the page took focus and the IME came up.
     ///
-    /// `caret` は WebView 内のピクセル座標での矩形。候補ウィンドウを出す位置を
-    /// 決めるために、ゲーム側でこれを画面座標へ射影して `ime_anchor` に入れる。
+    /// `caret` is a rectangle in WebView pixels. Project it to screen coordinates
+    /// and assign the result to `ime_anchor` to place the candidate window.
     #[signal]
     fn ime_requested(caret: Rect2, multiline: bool);
 
-    /// フォーカスが外れて IME を落とした。
+    /// Focus left and the IME went down.
     #[signal]
     fn ime_dismissed();
 
-    // ── 生存管理 ────────────────────────────────────────────────────────────
+    /// The page's process died. Rendering stops; `reload()` rebuilds it.
+    #[signal]
+    fn crashed(reason: GString);
+
+    /// The page called `alert()`.
+    ///
+    /// The page's JavaScript is blocked until it is answered, so always call
+    /// `respond_to_dialog()` once the message has been shown. `message` is text
+    /// the page chooses, so present it in a way that cannot be mistaken for the
+    /// game's own UI.
+    #[signal]
+    fn dialog_alert(message: GString);
+
+    /// The page called `confirm()`. Answer with `respond_to_dialog(accepted, "")`.
+    #[signal]
+    fn dialog_confirm(message: GString);
+
+    /// The page called `prompt()`. Answer with `respond_to_dialog(accepted, text)`.
+    #[signal]
+    fn dialog_prompt(message: GString, default_value: GString);
+
+    /// A `<select>` was opened. Answer with `respond_to_select()`.
+    ///
+    /// `options` is an array of `{ id, label, disabled, group }` dictionaries.
+    /// `<optgroup>`s are flattened, with the group's name in `group`.
+    #[signal]
+    fn select_element_requested(options: Array<Variant>, allow_multiple: bool);
+
+    // ── Lifetime ────────────────────────────────────────────────────────────
 
     #[func]
     fn start(&mut self) {
@@ -188,11 +219,11 @@ impl ServoWebView {
         }
         let size = self.physical_size();
 
-        // surfman が ANGLE を掴む前に、拡張と同じフォルダから読み込ませておく。
+        // Load ANGLE from beside the extension before surfman goes looking for it.
         crate::angle_loader::preload();
 
-        // ここから先で Servo の GL コンテキストをカレントにする。抜けるときに
-        // Godot のものへ戻す (Android の Compatibility レンダラで必須)。
+        // Servo's GL context becomes current below. Godot's is restored on the way
+        // out, which the Compatibility renderer on Android depends on.
         let _host_context = HostContext::capture();
 
         let context = match GodotRenderingContext::new(size) {
@@ -210,8 +241,8 @@ impl ServoWebView {
         let waker = GodotWaker::new();
         let servo = servo_instance::acquire(&waker);
 
-        // Servo の既定は無効。プロセス全体の設定なので、最初に起動したノードの
-        // 指定が効く。
+        // Off by default in Servo. The preference is process-wide, so the first
+        // node to start decides it.
         servo.set_preference("dom_webgl2_enabled", PrefValue::Bool(self.enable_webgl2));
 
         let user_content = Rc::new(UserContentManager::new(&servo));
@@ -263,7 +294,7 @@ impl ServoWebView {
         self.inner.is_some()
     }
 
-    /// 実際に使われているテクスチャ共有経路の名前。
+    /// The name of the texture sharing path actually in use.
     #[func]
     fn get_backend_name(&self) -> GString {
         match &self.inner {
@@ -272,15 +303,15 @@ impl ServoWebView {
         }
     }
 
-    // ── 表示 ────────────────────────────────────────────────────────────────
+    // ── Display ─────────────────────────────────────────────────────────────
 
-    /// Servo の描画結果。マテリアルや `TextureRect` にそのまま挿せる。
+    /// What Servo rendered. Drops straight into a material or a `TextureRect`.
     #[func]
     fn get_texture(&self) -> Option<Gd<Texture2D>> {
         self.inner.as_ref().map(|inner| inner.bridge.texture())
     }
 
-    /// テクスチャが上下反転しているか。macOS の共有経路だけ `true` になる。
+    /// Whether the texture arrives upside down. Only the macOS path returns `true`.
     #[func]
     fn is_texture_flipped_v(&self) -> bool {
         self.inner
@@ -288,8 +319,8 @@ impl ServoWebView {
             .is_some_and(|inner| inner.bridge.needs_v_flip())
     }
 
-    /// `samplerExternalOES` を使うシェーダでないと読めないテクスチャか。
-    /// Android の AHardwareBuffer 経路だけ `true` になる。
+    /// Whether the texture can only be read by a shader declaring
+    /// `samplerExternalOES`. Only the Android AHardwareBuffer path returns `true`.
     #[func]
     fn needs_external_sampler(&self) -> bool {
         self.inner
@@ -297,7 +328,7 @@ impl ServoWebView {
             .is_some_and(|inner| inner.bridge.needs_external_sampler())
     }
 
-    // ── 操作 ────────────────────────────────────────────────────────────────
+    // ── Navigation ──────────────────────────────────────────────────────────
 
     #[func]
     fn load_url(&mut self, url: GString) {
@@ -332,8 +363,8 @@ impl ServoWebView {
         }
     }
 
-    /// JavaScript を評価する。結果は `script_result` シグナルで返る。
-    /// 戻り値は結果と突き合わせるための id。
+    /// Evaluate JavaScript. The result comes back on the `script_result` signal.
+    /// The return value is the id to match that result against.
     #[func]
     fn evaluate_javascript(&mut self, script: GString) -> i64 {
         let id = self.next_script_id;
@@ -351,7 +382,7 @@ impl ServoWebView {
         id
     }
 
-    /// WebView の解像度を変える。
+    /// Change the WebView resolution.
     #[func]
     fn set_view_size_px(&mut self, size: Vector2i) {
         self.view_size = size;
@@ -364,24 +395,25 @@ impl ServoWebView {
             return;
         }
         inner.webview.resize(size);
-        // サーフェスが変わったので、テクスチャの橋も作り直す。
+        // The surface changed, so rebuild the texture bridge too.
         inner.bridge.release();
         inner.bridge = bridge::create(&inner.context, size, &HostContext::capture());
     }
 
-    // ── 入力 ────────────────────────────────────────────────────────────────
+    // ── Input ───────────────────────────────────────────────────────────────
 
-    /// Godot の入力イベントを WebView に転送する。
+    /// Forward a Godot input event to the WebView.
     ///
-    /// `position` は WebView 内のピクセル座標。`TextureRect` なら
-    /// `event.position - texture_rect.global_position`、3D パネルなら
-    /// レイキャストで得た UV に解像度を掛けたものを渡す。
+    /// `position` is in WebView pixels. For a `TextureRect` that is
+    /// `event.position - texture_rect.global_position`; for a 3D panel it is the
+    /// UV from the raycast multiplied by the resolution.
     ///
-    /// マウスとタッチの両方を受け付ける。Godot は
-    /// `input_devices/pointing/emulate_mouse_from_touch` (既定で有効) によって
-    /// タッチから疑似マウスイベントも作るので、そのまま両方を流すと 1 回の操作が
-    /// 二重に届く。疑似イベントは `device` が `DEVICE_ID_EMULATION` になるので、
-    /// ここで落とす。`emulate_touch_from_mouse` の逆向きも同じ規則で除ける。
+    /// Both mouse and touch events are accepted. Godot's
+    /// `input_devices/pointing/emulate_mouse_from_touch`, on by default, also
+    /// builds a synthetic mouse event from every touch, so passing both through
+    /// unfiltered would deliver one gesture twice. Synthetic events carry
+    /// `DEVICE_ID_EMULATION` as their `device` and are dropped here. The same
+    /// rule covers `emulate_touch_from_mouse` in the other direction.
     #[func]
     fn feed_input(&mut self, event: Gd<InputEvent>, position: Vector2) {
         let Some(inner) = self.inner.as_ref() else {
@@ -429,7 +461,55 @@ impl ServoWebView {
         }
     }
 
-    /// ポインタが WebView の外に出たことを伝える。ホバー状態を解除させる。
+    /// Answer `dialog_alert`, `dialog_confirm` or `dialog_prompt`.
+    ///
+    /// The page's JavaScript stays blocked until this is called, so always call
+    /// it somewhere after receiving a dialog signal. A false `accepted` cancels;
+    /// `text` is what the `prompt()` field contains and is ignored otherwise.
+    #[func]
+    fn respond_to_dialog(&mut self, accepted: bool, text: GString) {
+        if let Some(inner) = self.inner.as_ref() {
+            inner.sink.respond_to_dialog(accepted, &text.to_string());
+        }
+    }
+
+    /// Answer `select_element_requested`.
+    ///
+    /// `selected` holds the `id`s of the options the signal handed over. To
+    /// cancel instead, call `cancel_pending_dialog()`.
+    #[func]
+    fn respond_to_select(&mut self, selected: Array<i64>) {
+        let Some(inner) = self.inner.as_ref() else {
+            return;
+        };
+        let ids = selected
+            .iter_shared()
+            .filter(|id| *id >= 0)
+            .map(|id| id as usize)
+            .collect();
+        inner.sink.respond_to_select(ids);
+    }
+
+    /// Withdraw a pending dialog or `<select>`.
+    ///
+    /// Sends the default answer, a cancel, and lets the page carry on. Useful as
+    /// a safety net when the game closes its own UI.
+    #[func]
+    fn cancel_pending_dialog(&mut self) {
+        if let Some(inner) = self.inner.as_ref() {
+            inner.sink.cancel_pending_control();
+        }
+    }
+
+    /// Whether a dialog or `<select>` is waiting for an answer.
+    #[func]
+    fn has_pending_dialog(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|inner| inner.sink.has_pending_control())
+    }
+
+    /// Tell the WebView the pointer left, so it clears any hover state.
     #[func]
     fn notify_pointer_left(&mut self) {
         if let Some(inner) = self.inner.as_ref() {
@@ -443,10 +523,11 @@ impl ServoWebView {
 
     // ── IME ─────────────────────────────────────────────────────────────────
 
-    /// 未確定文字列を直接送り込む。
+    /// Push a preedit string in directly.
     ///
-    /// OS の IME に頼らず、ゲーム側で独自の入力 UI を作る場合の入口。
-    /// `state` は `"start"` / `"update"` / `"end"`。`"end"` の `text` が確定文字列。
+    /// The entry point for driving composition from the game's own input UI
+    /// rather than the OS IME. `state` is `"start"`, `"update"` or `"end"`; the
+    /// `text` given with `"end"` is what gets committed.
     #[func]
     fn feed_ime_composition(&mut self, state: GString, text: GString) {
         let state = match state.to_string().as_str() {
@@ -461,7 +542,7 @@ impl ServoWebView {
         self.send_composition(state, text.to_string());
     }
 
-    /// 変換を取り消す。
+    /// Cancel the composition.
     #[func]
     fn cancel_ime_composition(&mut self) {
         if let Some(inner) = self.inner.as_ref() {
@@ -483,27 +564,29 @@ impl ServoWebView {
         }
     }
 
-    /// OS の IME が持っている未確定文字列を読んで Servo に流す。
+    /// Read the preedit the OS IME holds and pass it to Servo.
     ///
-    /// 未確定文字列が空になったら変換の終わりだが、ここで `End` を送ってはいけない。
-    /// Servo の `compositionend` は `data` に確定文字列が載っている前提で、空だと
-    /// 選択を外すだけで未確定文字列を消さない (`text_input.rs` の
-    /// `handle_compositionend`)。そのまま確定文字列をキーイベントで入れると、
-    /// 未確定分と確定分の両方が残って二重になる。
+    /// An empty preedit means the composition ended, but `End` must not be sent
+    /// here. Servo's `compositionend` assumes `data` carries the committed text;
+    /// given an empty one it only clears the selection and leaves the preedit in
+    /// place (`handle_compositionend` in `text_input.rs`). Feeding the committed
+    /// text in as key events after that would leave both the preedit and the
+    /// commit, doubling the input.
     ///
-    /// Godot の `ime_get_text()` は `GCS_COMPSTR` しか返さず確定文字列を持たない
-    /// ので、確定文字列は後続のキーイベントから組み立てて `End` に載せる。
-    /// 実際の送信は `flush_commit()` で行う。
+    /// Godot's `ime_get_text()` returns only `GCS_COMPSTR` and never the
+    /// committed text, so the commit is assembled from the key events that
+    /// follow and carried on `End`. `flush_commit()` does the actual send.
     fn sync_preedit(&mut self) {
         let preedit = DisplayServer::singleton().ime_get_text();
         self.feed_ime_preedit(preedit);
     }
 
-    /// 未確定文字列を差し替える。
+    /// Replace the preedit string.
     ///
-    /// OS の IME からは `sync_preedit()` が呼ぶ。独自の入力 UI を作る場合は
-    /// ここへ直接流し込み、空文字列を渡してから確定文字を `feed_input()` で
-    /// 送れば、OS の IME と同じ経路をたどる。
+    /// `sync_preedit()` calls this for the OS IME. A custom input UI can push
+    /// into it directly: pass the preedit, then an empty string, then send the
+    /// committed characters through `feed_input()` to follow the same route the
+    /// OS IME takes.
     #[func]
     fn feed_ime_preedit(&mut self, preedit: GString) {
         if preedit == self.last_preedit {
@@ -528,15 +611,17 @@ impl ServoWebView {
         self.send_composition(state, preedit.to_string());
     }
 
-    /// 変換終了後に集めた確定文字列を `End` として送る。
+    /// Send the committed text gathered after the composition ended, as `End`.
     ///
-    /// Windows は「未確定が空になった通知」→「確定文字列の `WM_CHAR`」の順で寄こし、
-    /// Godot は前者を通知、後者をキーイベントとして同じフレーム内に配る。したがって
-    /// `_process` の時点では確定文字列は出そろっている。
+    /// Windows delivers "the preedit went empty" first and the `WM_CHAR`s of the
+    /// committed text second; Godot hands over the former as a notification and
+    /// the latter as key events, within the same frame. By the time `_process`
+    /// runs, the committed text is therefore complete.
     ///
-    /// 変換を取り消した場合は空のまま届く。その場合 Servo は未確定文字列を消さずに
-    /// 残す (上記のとおり `clear_selection()` は選択を外すだけ) が、こちらから消す
-    /// 手段が composition API に無いため、現状はそのままにしている。
+    /// A cancelled composition arrives empty. Servo then leaves the preedit in
+    /// place rather than removing it, since `clear_selection()` only deselects
+    /// as described above, and the composition API offers no way to delete it
+    /// from this side, so it stays as it is.
     fn flush_commit(&mut self) {
         if !self.awaiting_commit {
             return;
@@ -573,7 +658,7 @@ impl ServoWebView {
         }
     }
 
-    // ── 内部 ────────────────────────────────────────────────────────────────
+    // ── Internals ───────────────────────────────────────────────────────────
 
     fn physical_size(&self) -> PhysicalSize<u32> {
         PhysicalSize::new(
@@ -582,10 +667,11 @@ impl ServoWebView {
         )
     }
 
-    /// タッチ点 1 つ分を Servo に渡す。
+    /// Pass one touch point to Servo.
     ///
-    /// スクロールもフリックもピンチも Servo 側のタッチハンドラが面倒を見るので、
-    /// ここでやることは指の上げ下げと移動をそのまま伝えることだけ。
+    /// Scrolling, flinging and pinching are all handled by Servo's own touch
+    /// handler, so all that happens here is relaying the finger going down,
+    /// moving, and coming up.
     fn feed_touch(&self, phase: TouchEventType, index: i32, point: DevicePoint) {
         let Some(inner) = self.inner.as_ref() else {
             return;
@@ -607,7 +693,7 @@ impl ServoWebView {
         let index = event.get_button_index();
         let pressed = event.is_pressed();
 
-        // ホイールはボタンではなくスクロールとして送る。
+        // The wheel goes out as a scroll, not as a button.
         let wheel = match index {
             GodotMouseButton::WHEEL_UP => Some((0.0, WHEEL_LINE_HEIGHT)),
             GodotMouseButton::WHEEL_DOWN => Some((0.0, -WHEEL_LINE_HEIGHT)),
@@ -648,7 +734,8 @@ impl ServoWebView {
             MouseButtonAction::Up
         };
 
-        // ボタンの前に位置を伝えておかないと、Servo 側が違う要素を叩くことがある。
+        // Without the position arriving before the button, Servo sometimes hits
+        // the wrong element.
         inner
             .webview
             .notify_input_event(ServoInputEvent::MouseMove(MouseMoveEvent::new(
@@ -692,8 +779,9 @@ impl ServoWebView {
             return;
         };
 
-        // 変換直後に届く文字は確定文字列。キーとして送ると二重に入るので、
-        // ここでは溜めるだけにして `flush_commit()` が `End` に載せる。
+        // Characters arriving right after a composition are the committed text.
+        // Sending them as keys would double the input, so they are only collected
+        // here and `flush_commit()` carries them on `End`.
         if self.awaiting_commit {
             if let (true, Key::Character(text)) = (event.is_pressed(), &key) {
                 self.pending_commit.push_str(text);
@@ -714,24 +802,24 @@ impl ServoWebView {
         ));
     }
 
-    /// 毎フレームの処理。Servo を回し、必要なら描き直し、溜まった通知を emit する。
+    /// The per-frame work: pump Servo, repaint when needed, emit what queued up.
     fn pump(&mut self) {
         if self.inner.is_none() {
             return;
         }
-        // 入力処理はこのフレームの `_process` より前に終わっているので、確定文字列は
-        // ここで出そろっている。
+        // Input handling finished before this frame's `_process`, so the committed
+        // text is complete by now.
         self.flush_commit();
 
         let Some(inner) = self.inner.as_ref() else {
             return;
         };
 
-        // Servo に GL コンテキストを貸す間だけ。抜けるときに Godot へ返す。
-        // `spin_event_loop()` も GL に触るので、その前に控える。
+        // Only for as long as Servo borrows the GL context; Godot's is restored on
+        // the way out. `spin_event_loop()` touches GL too, so capture before it.
         let _host_context = HostContext::capture();
 
-        // Servo は自前のスレッドから起こしてくるので、その要求を取りこぼさない。
+        // Servo wakes us from its own threads; do not drop those requests.
         inner.waker.take_pending();
         inner.servo.spin_event_loop();
 
@@ -747,7 +835,7 @@ impl ServoWebView {
         }
 
         if repaint {
-            // `paint()` の直後、まだ FBO に結果が乗っている状態で取り込む。
+            // Take the frame right after `paint()`, while the FBO still holds it.
             let Some(inner) = self.inner.as_mut() else {
                 return;
             };
@@ -806,6 +894,48 @@ impl ServoWebView {
                     self.set_ime_enabled(false);
                     self.signals().ime_dismissed().emit();
                 }
+                ServoEvent::Crashed { reason } => {
+                    self.signals().crashed().emit(&GString::from(&reason));
+                }
+                ServoEvent::DialogAlert { message } => {
+                    self.signals().dialog_alert().emit(&GString::from(&message));
+                }
+                ServoEvent::DialogConfirm { message } => {
+                    self.signals()
+                        .dialog_confirm()
+                        .emit(&GString::from(&message));
+                }
+                ServoEvent::DialogPrompt {
+                    message,
+                    default_value,
+                } => {
+                    self.signals()
+                        .dialog_prompt()
+                        .emit(&GString::from(&message), &GString::from(&default_value));
+                }
+                ServoEvent::SelectElement {
+                    options,
+                    allow_multiple,
+                } => {
+                    let mut array = Array::<Variant>::new();
+                    for option in options {
+                        let mut entry = Dictionary::<GString, Variant>::new();
+                        entry.set(&GString::from("id"), &option.id.to_variant());
+                        entry.set(
+                            &GString::from("label"),
+                            &GString::from(&option.label).to_variant(),
+                        );
+                        entry.set(&GString::from("disabled"), &option.disabled.to_variant());
+                        entry.set(
+                            &GString::from("group"),
+                            &GString::from(&option.group).to_variant(),
+                        );
+                        array.push(&entry.to_variant());
+                    }
+                    self.signals()
+                        .select_element_requested()
+                        .emit(&array, allow_multiple);
+                }
             }
         }
     }
@@ -833,7 +963,7 @@ fn godot_key_to_servo(event: &Gd<InputEventKey>) -> Option<Key> {
         GodotKey::ALT => NamedKey::Alt,
         GodotKey::META => NamedKey::Meta,
         _ => {
-            // 印字可能な文字はそのまま渡す。
+            // Printable characters go through unchanged.
             let unicode = event.get_unicode();
             let character = char::from_u32(unicode).filter(|c| !c.is_control())?;
             return Some(Key::Character(character.to_string()));
@@ -869,7 +999,7 @@ fn js_value_to_variant(value: JSValue) -> Variant {
     }
 }
 
-/// `Servo` はプロセスに 1 つ。複数の `ServoWebView` で共有する。
+/// One `Servo` per process, shared by every `ServoWebView`.
 mod servo_instance {
     use super::*;
 
@@ -906,7 +1036,7 @@ mod servo_instance {
         }
     }
 
-    /// Servo のネットワーク層は rustls の provider が入っていることを前提にしている。
+    /// Servo's network layer assumes a rustls provider has been installed.
     fn install_crypto_provider() {
         if rustls::crypto::CryptoProvider::get_default().is_none() {
             let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();

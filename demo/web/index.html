@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Servo in Godot</title>
@@ -33,7 +33,8 @@
     display: flex;
     align-items: baseline;
     gap: 14px;
-    /* 背後のスクロール内容をぼかす。GPU 共有経路が効いているかの目視確認にもなる。 */
+    /* Blurs the scrolling content behind it, which also shows at a glance that
+       the GPU sharing path is doing its job. */
     backdrop-filter: blur(14px);
     background: rgba(11, 16, 32, 0.55);
     position: relative;
@@ -138,51 +139,69 @@
 <main>
   <div class="grid">
     <div class="card">
-      <h2>ポーション</h2>
-      <p>HP を 50 回復する。</p>
-      <button onclick="godot.emit('buy', { item: 'potion', price: 120 })">120G で買う</button>
+      <h2>Potion</h2>
+      <p>Restores 50 HP.</p>
+      <button onclick="godot.emit('buy', { item: 'potion', price: 120 })">Buy for 120G</button>
     </div>
     <div class="card">
-      <h2>エーテル</h2>
-      <p>MP を 30 回復する。</p>
-      <button onclick="godot.emit('buy', { item: 'ether', price: 240 })">240G で買う</button>
+      <h2>Ether</h2>
+      <p>Restores 30 MP.</p>
+      <button onclick="godot.emit('buy', { item: 'ether', price: 240 })">Buy for 240G</button>
     </div>
     <div class="card">
-      <h2>フェニックスの尾</h2>
-      <p>戦闘不能から復帰させる。</p>
-      <button onclick="godot.emit('buy', { item: 'phoenix', price: 900 })">900G で買う</button>
+      <h2>Phoenix Down</h2>
+      <p>Revives a fallen party member.</p>
+      <button onclick="godot.emit('buy', { item: 'phoenix', price: 900 })">Buy for 900G</button>
     </div>
   </div>
 
   <div class="row">
-    <input type="text" id="name" placeholder="名前を入力してみる">
+    <input type="text" id="name" placeholder="Type a name (IME works here)">
     <button onclick="godot.emit('rename', { name: document.getElementById('name').value })">
-      名前を送る
+      Send the name
     </button>
-    <!-- JavaScript を使わない経路。素のリンクだけで Godot にイベントが飛ぶ。 -->
-    <a href="godot:close?reason=link">閉じる (godot: スキーム)</a>
+    <!-- The route without JavaScript: a plain link sends an event to Godot. -->
+    <a href="godot:close?reason=link">Close (godot: scheme)</a>
+  </div>
+
+  <!-- For checking dialogs and <select>. The game shows the UI and answers both. -->
+  <div class="row">
+    <button onclick="alert('The villager greets you.')">alert</button>
+    <button onclick="godot.emit('confirmed', { ok: confirm('Buy it?') })">confirm</button>
+    <button onclick="godot.emit('prompted', { name: prompt('Your name?', 'Hero') })">prompt</button>
+    <select id="job" onchange="godot.emit('job', { value: this.value })">
+      <option value="warrior">Warrior</option>
+      <option value="mage">Mage</option>
+      <optgroup label="Advanced">
+        <option value="paladin">Paladin</option>
+        <option value="sage">Sage</option>
+      </optgroup>
+    </select>
   </div>
 
   <div class="spin"></div>
 
   <p class="filler">
-    ここから下はスクロール確認用の埋め草。ホイールで動かすと WebRender の
-    スクロールがそのまま効いていることが分かる。
+    Everything below is padding, to check scrolling. Moving it with the wheel or a
+    finger shows WebRender's own scrolling coming through unchanged.
+  </p>
+  <p class="filler">
+    Text shaping check: 日本語のテキストも組める &middot; 한국어 &middot; العربية &middot; Ελληνικά
   </p>
   <div id="filler"></div>
 </main>
 
 <script>
-  // スクロールさせるための埋め草。
+  // Padding, so there is something to scroll.
   const filler = document.getElementById('filler');
   for (let i = 1; i <= 40; i += 1) {
     const p = document.createElement('p');
     p.className = 'filler';
-    p.textContent = `行 ${i} — CSS も JavaScript もそのまま動いている。`;
+    p.textContent = `Line ${i} — CSS and JavaScript both run unchanged.`;
     filler.appendChild(p);
   }
 
-  // 起動を Godot 側に知らせる。
+  // Tell Godot the page is up.
   window.addEventListener('load', () => godot.emit('ready', { title: document.title }));
 </script>
 

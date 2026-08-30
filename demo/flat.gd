@@ -1,8 +1,9 @@
 extends Control
-## 2D の確認用シーン。
+## The 2D scene, for checking things.
 ##
-## 3D の板を挟まないぶん座標変換が単純なので、まず絵が出るか / 入力が通るかを
-## 切り分けたいときはこちらを使う。
+## With no 3D panel in the way the coordinate maths is simple, so this is the
+## place to start when isolating whether an image appears at all or whether input
+## gets through.
 
 const WebAssets = preload("res://demo/web_assets.gd")
 
@@ -20,7 +21,7 @@ func _ready() -> void:
 	add_child(root)
 
 	status = Label.new()
-	status.text = "起動中…"
+	status.text = "Starting..."
 	root.add_child(status)
 
 	view = TextureRect.new()
@@ -28,7 +29,7 @@ func _ready() -> void:
 	view.stretch_mode = TextureRect.STRETCH_SCALE
 	view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	view.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# TextureRect 自身が入力を受け取れるようにする。
+	# Let the TextureRect itself receive input.
 	view.mouse_filter = Control.MOUSE_FILTER_STOP
 	view.gui_input.connect(_on_view_input)
 	view.mouse_exited.connect(_on_view_exited)
@@ -43,14 +44,31 @@ func _ready() -> void:
 	browser.bridge_event.connect(_on_bridge_event)
 	browser.title_changed.connect(func(title: String) -> void: status.text = title)
 	browser.ime_requested.connect(_on_ime_requested)
+	browser.dialog_alert.connect(func(message: String) -> void:
+		_note("alert: %s" % message)
+		browser.respond_to_dialog(true, ""))
+	browser.dialog_confirm.connect(func(message: String) -> void:
+		_note("confirm: %s" % message)
+		browser.respond_to_dialog(true, ""))
+	browser.dialog_prompt.connect(func(message: String, default_value: String) -> void:
+		_note("prompt: %s" % message)
+		browser.respond_to_dialog(true, default_value))
+	browser.select_element_requested.connect(func(options: Array, _multiple: bool) -> void:
+		_note("select: %d options" % options.size())
+		if options.is_empty():
+			browser.cancel_pending_dialog()
+		else:
+			browser.respond_to_select([options[-1]["id"]]))
+	browser.crashed.connect(func(reason: String) -> void:
+		push_error("godot-servo: page crashed: %s" % reason))
 
 
 func _local_page_url() -> String:
 	return WebAssets.page_url("index")
 
 
-## TextureRect のローカル座標を WebView のピクセル座標に直して渡す。
-## マウスとタッチの両方を通す。重複する疑似イベントは拡張側で落としている。
+## Converts the TextureRect's local coordinates to WebView pixels and forwards them.
+## Mouse and touch both go through; the extension drops the duplicate synthetic events.
 func _on_view_input(event: InputEvent) -> void:
 	if browser == null:
 		return
@@ -88,10 +106,11 @@ func _on_frame_updated() -> void:
 	view.texture = texture
 	view.flip_v = browser.is_texture_flipped_v()
 	texture_bound = true
-	status.text = "経路: %s" % browser.get_backend_name()
+	status.text = "path: %s" % browser.get_backend_name()
 
 
-## 候補ウィンドウの位置。TextureRect の拡大率を戻して画面座標にする。
+## Where to put the candidate window: undo the TextureRect's scaling to reach
+## screen coordinates.
 func _on_ime_requested(caret: Rect2, _multiline: bool) -> void:
 	var scale := view.size / Vector2(VIEW_SIZE)
 	var bottom_left := Vector2(caret.position.x, caret.position.y + caret.size.y)
@@ -101,3 +120,10 @@ func _on_ime_requested(caret: Rect2, _multiline: bool) -> void:
 func _on_bridge_event(name: String, payload: String) -> void:
 	status.text = "%s %s" % [name, payload]
 	print("godot-servo: bridge_event ", name, " ", payload)
+
+
+## Shows a notification from the page on the status line.
+func _note(text: String) -> void:
+	if status != null:
+		status.text = text
+	print("godot-servo: ", text)
