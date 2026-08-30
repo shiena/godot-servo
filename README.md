@@ -196,7 +196,7 @@ offers no way to delete the preedit, so there is nothing to send.
 
 | | |
 | --- | --- |
-| `url`, `view_size`, `autostart`, `enable_webgl2`, `enable_webgpu` | Exported properties |
+| `url`, `view_size`, `autostart`, `enable_webgl2` | Exported properties |
 | `start()`, `stop()`, `is_running()` | Lifetime |
 | `get_texture()`, `is_texture_flipped_v()`, `get_backend_name()` | Display |
 | `load_url()`, `reload()`, `go_back()`, `go_forward()` | Navigation |
@@ -223,8 +223,8 @@ Servo puts WebGL and WebGPU output on the same shared texture. `demo/web/` holds
 
 ![three.js 0.180 rendering over WebGL 2.0](shot_three.png)
 
-Servo disables WebGL 2 and WebGPU by default, so `ServoWebView` exposes `enable_webgl2` and
-`enable_webgpu`, which set the `dom_webgl2_enabled` and `dom_webgpu_enabled` preferences.
+Servo disables WebGL 2 by default, so `ServoWebView` exposes `enable_webgl2`, which sets the
+`dom_webgl2_enabled` preference.
 
 ```sh
 scripts/build.ps1 -Run -Page webgl          # plain WebGL
@@ -239,10 +239,11 @@ scripts/build.ps1 -Run -Page http://127.0.0.1:8731/three.html
 
 ### WebGPU details
 
-The `webgpu` feature is **off**, so `navigator.gpu` does not exist in a default build. Turning it on
-also drags wgpu and naga into the binary, which is not worth carrying for something that crashes.
+The `webgpu` feature is **off** and there is no property to turn it on. It will come back when it
+works. What follows is what was found before it was removed.
 
-Enable the feature and set `enable_webgpu`, and `navigator.gpu` appears.
+Building with the feature and setting the `dom_webgpu_enabled` preference makes `navigator.gpu`
+appear.
 `requestAdapter()`, `requestDevice()`, and compute shaders all work correctly:
 `demo/web/webgpu-compute.html` reads back `[0, 20, 126]` from the GPU.
 

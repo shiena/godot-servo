@@ -64,19 +64,6 @@ pub struct ServoWebView {
     #[init(val = true)]
     enable_webgl2: bool,
 
-    /// WebGPU を有効にする。既定は無効。
-    ///
-    /// 既定のビルドには servo の `webgpu` feature を入れていないので、これを
-    /// true にしても `navigator.gpu` は生えない。feature を入れ直したうえで
-    /// 追試したい場合のためだけに残してある。
-    ///
-    /// feature を入れると、デバイス生成とコンピュートシェーダまでは動くが
-    /// プロセスが segfault で落ちる (canvas への提示を試みた場合は確実に、
-    /// コンピュートのみでも終了時に)。
-    #[export]
-    #[init(val = false)]
-    enable_webgpu: bool,
-
     /// IME の候補ウィンドウを出す位置 (ウィンドウ座標)。
     ///
     /// WebView の中のキャレット位置をそのまま使うことはできない。3D の板に貼って
@@ -213,10 +200,9 @@ impl ServoWebView {
         let waker = GodotWaker::new();
         let servo = servo_instance::acquire(&waker);
 
-        // どちらも Servo の既定は無効。プロセス全体の設定なので、最初に起動した
-        // ノードの指定が効く。
+        // Servo の既定は無効。プロセス全体の設定なので、最初に起動したノードの
+        // 指定が効く。
         servo.set_preference("dom_webgl2_enabled", PrefValue::Bool(self.enable_webgl2));
-        servo.set_preference("dom_webgpu_enabled", PrefValue::Bool(self.enable_webgpu));
 
         let user_content = Rc::new(UserContentManager::new(&servo));
         user_content.add_script(Rc::new(UserScript::new(BRIDGE_SCRIPT.to_owned(), None)));

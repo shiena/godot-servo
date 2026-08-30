@@ -211,9 +211,8 @@ Servo は WebGL / WebGPU の描画結果も同じ共有テクスチャに乗せ�
 
 ![three.js 0.180 を WebGL 2.0 で描画したところ](shot_three.png)
 
-WebGL2 と WebGPU はどちらも Servo 側の既定が無効なので、`ServoWebView` の
-`enable_webgl2` / `enable_webgpu` から `dom_webgl2_enabled` /
-`dom_webgpu_enabled` を立てている。
+WebGL 2 は Servo 側の既定が無効なので、`ServoWebView` の `enable_webgl2` から
+`dom_webgl2_enabled` を立てている。
 
 ```sh
 scripts/build.ps1 -Run -Page webgl          # 素の WebGL
@@ -229,10 +228,10 @@ URL として扱う。
 
 ### WebGPU の状態
 
-`webgpu` feature は**入れていない**ので、既定のビルドに `navigator.gpu` は無い。
-有効にすると wgpu と naga がまるごとバイナリに乗るうえ、落ちるものを同梱することになる。
+`webgpu` feature は**入れておらず、有効にするプロパティも用意していない**。動くように
+なったら入れ直す。以下は取り外す前に分かっていたこと。
 
-feature を有効にしてビルドし、`enable_webgpu` を立てると `navigator.gpu` は生えて、`requestAdapter()` / `requestDevice()` /
+feature を有効にしてビルドし、`dom_webgpu_enabled` を立てると `navigator.gpu` は生えて、`requestAdapter()` / `requestDevice()` /
 コンピュートシェーダの実行と読み戻しまでは正しく動く
 (`demo/web/webgpu-compute.html` が `[0, 20, 126]` を返す)。
 
