@@ -99,3 +99,39 @@ jobs:
           name: godot_servo-${{ matrix.os }}
           path: addons/godot_servo/bin/
           if-no-files-found: error
+
+  # Android は実機で動かしたことがない。ビルドが壊れていないかだけ見る。
+  # GPU 共有 (AHardwareBuffer) は Compatibility レンダラでのみ成立し、
+  # Forward+ / Mobile では CPU リードバックに落ちる。
+  android:
+    name: Build (Android ${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build and stage the addon
+        env:
+          # ランナーにプリインストールされている NDK を使う。
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: ./scripts/build.sh --android --abi ${{ matrix.abi }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: godot_servo-android-${{ matrix.abi }}
+          path: addons/godot_servo/bin/android/
+          if-no-files-found: error

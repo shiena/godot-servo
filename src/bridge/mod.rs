@@ -17,6 +17,9 @@ pub mod d3d12;
 #[cfg(target_os = "macos")]
 pub mod metal;
 
+#[cfg(target_os = "android")]
+pub mod android;
+
 pub trait TextureBridge {
     /// Godot 側に渡すテクスチャ。生存期間中は同じインスタンスを返し続ける。
     fn texture(&self) -> Gd<Texture2D>;
@@ -77,6 +80,17 @@ fn try_create_shared(
     if driver == "d3d12" {
         return Some(
             d3d12::D3d12Bridge::new(context, size)
+                .map(|bridge| Box::new(bridge) as Box<dyn TextureBridge>),
+        );
+    }
+
+    // Android の GPU 共有は Compatibility (GLES3) レンダラでのみ成立する。
+    // Forward+ / Mobile は RenderingDevice 側の texture_external_initialize() が
+    // 空実装なので、外部テクスチャを受け取る先が無い。
+    #[cfg(target_os = "android")]
+    if driver == "opengl3" {
+        return Some(
+            android::AndroidBridge::new(context, size)
                 .map(|bridge| Box::new(bridge) as Box<dyn TextureBridge>),
         );
     }

@@ -20,6 +20,8 @@ param(
     [switch]$Test,
     [switch]$Checks,
     [switch]$NoBuild,
+    [switch]$Android,
+    [string]$Abi = 'arm64-v8a',
     [string]$Scene = 'main',
     [string]$Page,
     [string]$Screenshot,
@@ -49,14 +51,39 @@ if ($Checks) {
 }
 
 if (-not $NoBuild) {
-    Say "cargo build ($profileName)"
-    $cargoArgs = @('build')
-    if ($Release) { $cargoArgs += '--release' }
-    cargo @cargoArgs
-    if ($LASTEXITCODE -ne 0) { Die "cargo build failed (exit $LASTEXITCODE)" }
+    if ($Android) {
+        # cargo-ndk と ANDROID_NDK_HOME が要る。ABI ごとに別のディレクトリへ置く。
+        Say "cargo ndk -t $Abi build ($profileName)"
+        $cargoArgs = @('ndk', '-t', $Abi, 'build')
+        if ($Release) { $cargoArgs += '--release' }
+        cargo @cargoArgs
+        if ($LASTEXITCODE -ne 0) { Die "cargo ndk build failed (exit $LASTEXITCODE)" }
+    } else {
+        Say "cargo build ($profileName)"
+        $cargoArgs = @('build')
+        if ($Release) { $cargoArgs += '--release' }
+        cargo @cargoArgs
+        if ($LASTEXITCODE -ne 0) { Die "cargo build failed (exit $LASTEXITCODE)" }
+    }
 }
 
 # -------------------------------------------------------- Place (stage) ---
+if ($Android) {
+    $triple = switch ($Abi) {
+        'arm64-v8a'   { 'aarch64-linux-android' }
+        'armeabi-v7a' { 'armv7-linux-androideabi' }
+        'x86_64'      { 'x86_64-linux-android' }
+        'x86'         { 'i686-linux-android' }
+        default       { Die "unknown ABI: $Abi" }
+    }
+    $built = Join-Path $repoRoot "target\$triple\$profileName\libgodot_servo.so"
+    if (-not (Test-Path $built)) { Die "Build artifact not found: $built" }
+    New-Item -ItemType Directory -Force $binDir | Out-Null
+    Copy-Item -Force $built (Join-Path $binDir 'libgodot_servo.so')
+    Ok "Placed: $binDir"
+    return
+}
+
 $target = Join-Path $repoRoot "target\$profileName"
 $built = Join-Path $target 'godot_servo.dll'
 if (-not (Test-Path $built)) { Die "Build artifact not found: $built" }

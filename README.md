@@ -44,6 +44,8 @@ Verified on Windows with the Direct3D 12 renderer.
 | macOS / Metal | IOSurface to `MTLTexture` | Written, never run |
 | Windows / Vulkan (default) | — | Falls back to CPU readback |
 | Linux / Vulkan | — | Falls back to CPU readback, verified on WSL2 |
+| Android / Compatibility | `AHardwareBuffer` to `EGLImage` to `ExternalTexture` | Written, never run |
+| Android / Forward+ or Mobile | — | Falls back to CPU readback |
 | Anything else | `glReadPixels` to `ImageTexture` | Verified |
 
 Call `ServoWebView.get_backend_name()` to see which path a running instance took.
@@ -87,7 +89,12 @@ scripts/build.ps1                 # Windows: build and stage (debug)
 scripts/build.ps1 -Release
 ./scripts/build.sh                # Linux and macOS
 ./scripts/build.sh --release
+./scripts/build.sh --android      # Android arm64-v8a, needs cargo-ndk
 ```
+
+Android has to be cross-compiled from Linux or macOS. jemalloc's `configure` rejects a Windows
+build host (`Invalid configuration 'x86_64-pc-win32'`), so `-Android` in `build.ps1` only works
+under WSL or a Linux machine.
 
 The build script also stages the `libEGL.dll` and `libGLESv2.dll` that mozangle produces, picking
 them out of its `OUT_DIR` after the build finishes. Surfman loads ANGLE by filename at runtime, so
@@ -286,7 +293,8 @@ driver has no such restriction, so that path passes the texture directly.
   `WebRenderImageHandlerType`.
 - **WebGPU**, for the reason above.
 - **Multiple `ServoWebView` nodes.** They share one `Servo` instance by design, but that is untested.
-- **macOS on real hardware.** It builds in CI; nobody has run it.
+- **macOS and Android on real hardware.** They build in CI; nobody has run them.
+- **iOS.** Neither surfman nor Servo targets it, and iOS forbids JIT and `dlopen`.
 - **A GPU sharing path for Linux.** It runs, but through CPU readback.
 
 ## Related projects

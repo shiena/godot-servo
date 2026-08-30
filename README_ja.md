@@ -33,6 +33,8 @@ Windows / D3D12 で動作を確認済み。
 | macOS / Metal | IOSurface → `MTLTexture` | 実装済み・未実行 |
 | Windows / Vulkan (既定) | — | CPU リードバックに落ちる |
 | Linux / Vulkan | — | CPU リードバックに落ちる。WSL2 で確認 |
+| Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | 実装済み・未実行 |
+| Android / Forward+ · Mobile | — | CPU リードバックに落ちる |
 | その他 | `glReadPixels` → `ImageTexture` | 動作確認済み |
 
 GPU 共有が使えない環境では自動的に CPU リードバックへ落ちる。
@@ -74,7 +76,12 @@ scripts/build.ps1                 # Windows。ビルドして bin/ へ配置 (de
 scripts/build.ps1 -Release
 ./scripts/build.sh                # Linux / macOS
 ./scripts/build.sh --release
+./scripts/build.sh --android      # Android arm64-v8a。cargo-ndk が要る
 ```
+
+Android は Linux か macOS からクロスビルドする必要がある。jemalloc の `configure` が
+Windows のビルドホストを受け付けない (`Invalid configuration 'x86_64-pc-win32'`) ため、
+`build.ps1` の `-Android` は WSL か Linux 機でしか通らない。
 
 mozangle がビルドした `libEGL.dll` / `libGLESv2.dll` も、ビルドスクリプトが
 mozangle の `OUT_DIR` から拾って配る。surfman が実行時に名前で `LoadLibrary` するので、
@@ -276,7 +283,8 @@ Vulkan ドライバは同じ判定に `|| created_from_extension` の例外を�
   `WebRenderImageHandlerType` を足す fork が要る。
 - **WebGPU**。上記のとおりプロセスが落ちる。
 - 複数 `ServoWebView` の同時利用。`Servo` 本体は共有する作りにしてあるが未検証。
-- macOS の実機確認。CI でビルドは通るが、誰も動かしていない。
+- macOS と Android の実機確認。CI でビルドは通るが、誰も動かしていない。
+- iOS。surfman にも Servo にも対応が無く、JIT と `dlopen` も使えない。
 - Linux の GPU 共有経路。動きはするが CPU リードバック。
 
 ## 関連プロジェクト

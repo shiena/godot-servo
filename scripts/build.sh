@@ -10,6 +10,8 @@
 #   ./scripts/build.sh --test             # 入力とシグナルのセルフチェック
 #   ./scripts/build.sh --run --page webgl
 #   ./scripts/build.sh --checks           # fmt + clippy も回す
+#   ./scripts/build.sh --android          # Android (arm64-v8a)。cargo-ndk が要る
+#   ./scripts/build.sh --android --abi x86_64
 #
 # ステージを何も指定しなければビルドのみ。
 
@@ -24,6 +26,8 @@ do_run=0
 do_test=0
 do_checks=0
 scene=main
+android=0
+abi=arm64-v8a
 page=""
 screenshot=""
 quit_after=0
@@ -36,6 +40,8 @@ while [ $# -gt 0 ]; do
 		--test)       do_test=1 ;;
 		--checks)     do_checks=1 ;;
 		--no-build)   do_build=0 ;;
+		--android)    android=1 ;;
+		--abi)        abi="$2"; shift ;;
 		--scene)      scene="$2"; shift ;;
 		--page)       page="$2"; shift ;;
 		--screenshot) screenshot="$2"; shift ;;
@@ -49,12 +55,26 @@ say() { printf '\033[36m>> %s\033[0m\n' "$1"; }
 ok()  { printf '\033[32m%s\033[0m\n' "$1"; }
 die() { printf '\033[31m%s\033[0m\n' "$1" >&2; exit 1; }
 
-case "$(uname -s)" in
-	Darwin) platform=macos; lib_name=libgodot_servo.dylib; dest_name=libgodot_servo.dylib ;;
-	Linux)  platform=linux; lib_name=libgodot_servo.so;    dest_name=libgodot_servo.x86_64.so ;;
-	*)      die "unsupported host: $(uname -s) (use scripts/build.ps1 on Windows)" ;;
-esac
-bin_dir="$repo_root/addons/godot_servo/bin/$platform"
+if [ "$android" = 1 ]; then
+	case "$abi" in
+		arm64-v8a)   triple=aarch64-linux-android ;;
+		armeabi-v7a) triple=armv7-linux-androideabi ;;
+		x86_64)      triple=x86_64-linux-android ;;
+		x86)         triple=i686-linux-android ;;
+		*)           die "unknown ABI: $abi" ;;
+	esac
+	bin_dir="$repo_root/addons/godot_servo/bin/android/$abi"
+	built_path="$repo_root/target/$triple/$profile/libgodot_servo.so"
+	dest_name=libgodot_servo.so
+else
+	case "$(uname -s)" in
+		Darwin) platform=macos; lib_name=libgodot_servo.dylib; dest_name=libgodot_servo.dylib ;;
+		Linux)  platform=linux; lib_name=libgodot_servo.so;    dest_name=libgodot_servo.x86_64.so ;;
+		*)      die "unsupported host: $(uname -s) (use scripts/build.ps1 on Windows)" ;;
+	esac
+	bin_dir="$repo_root/addons/godot_servo/bin/$platform"
+	built_path="$repo_root/target/$profile/$lib_name"
+fi
 
 # ------------------------------------------------------------------ Build ---
 if [ "$do_checks" = 1 ]; then
@@ -70,20 +90,29 @@ if [ "$do_checks" = 1 ]; then
 fi
 
 if [ "$do_build" = 1 ]; then
-	say "cargo build ($profile)"
-	if [ "$profile" = release ]; then
-		cargo build --release
+	if [ "$android" = 1 ]; then
+		# cargo-ndk と ANDROID_NDK_HOME が要る。
+		say "cargo ndk -t $abi build ($profile)"
+		if [ "$profile" = release ]; then
+			cargo ndk -t "$abi" build --release
+		else
+			cargo ndk -t "$abi" build
+		fi
 	else
-		cargo build
+		say "cargo build ($profile)"
+		if [ "$profile" = release ]; then
+			cargo build --release
+		else
+			cargo build
+		fi
 	fi
 fi
 
 # ------------------------------------------------------------------ Place ---
-built="$repo_root/target/$profile/$lib_name"
-[ -f "$built" ] || die "Build artifact not found: $built"
+[ -f "$built_path" ] || die "Build artifact not found: $built_path"
 
 mkdir -p "$bin_dir"
-cp -f "$built" "$bin_dir/$dest_name"
+cp -f "$built_path" "$bin_dir/$dest_name"
 ok "Placed: $bin_dir/$dest_name"
 
 # -------------------------------------------------------------------- Run ---
