@@ -1,8 +1,26 @@
-/target
-/demo/.godot/*
+# Rust
+/target/
+# Cargo.lock は commit する。この crate は最終成果物 (GDExtension の共有ライブラリ) を
+# 作るので、固定した lockfile があると CI とリリースが再現する。
+
+# Godot
+/.godot/*
 # エディタを開かずに CLI から実行する場合、これが無いと拡張が読み込まれない。
-!/demo/.godot/extension_list.cfg
-/demo/addons/godot_servo/bin/*.dll
-/demo/addons/godot_servo/bin/*.so
-/demo/addons/godot_servo/bin/*.dylib
+!/.godot/extension_list.cfg
+*.import
+
+# ビルド成果物。scripts/build.ps1 / build.sh が置く。
+/addons/godot_servo/bin/
+
+# ローカルの作業ファイル
 *.log
+/httpd.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

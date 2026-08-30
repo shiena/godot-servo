@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Format and lint
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --check
+
+      - run: cargo clippy --all-targets -- -D warnings
+
+  windows:
+    name: Build and self check (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build and stage the addon
+        shell: pwsh
+        run: ./scripts/build.ps1 -Release
+
+      # 実機と同じ経路 (D3D12 の GPU テクスチャ共有) を踏めるかは GitHub の
+      # ランナー次第。GPU が無ければ CPU リードバックに落ちるが、入力とシグナルの
+      # 検証はどちらでも通る。
+      - name: Set up Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.2
+          use-dotnet: false
+
+      - name: Self check
+        shell: pwsh
+        run: |
+          godot --headless --path . --import
+          ./scripts/build.ps1 -NoBuild -Release -Test -Godot godot
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: godot_servo-windows
+          path: addons/godot_servo/bin/windows/
+          if-no-files-found: error
+
+  # macOS と Linux はまだ実機で確認していない。壊れていないかだけ見る。
+  unix:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxext-dev libgl1-mesa-dev \
+            libssl-dev libdbus-1-dev libudev-dev
+
+      - name: Build and stage the addon
+        run: ./scripts/build.sh --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: godot_servo-${{ matrix.os }}
+          path: addons/godot_servo/bin/
+          if-no-files-found: error

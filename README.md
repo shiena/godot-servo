@@ -40,29 +40,52 @@ Vulkan で GPU 共有を効かせるには Godot 側に
 必要な Godot は **4.4 以降**。`RenderingDevice.texture_create_from_extension()` と
 `get_driver_resource()` が GDExtension に露出したのが 4.4。
 
+## 構成
+
+リポジトリのルートがそのまま Godot プロジェクトになっている。クローンして
+Godot で開けば動く。
+
+```
+godot_servo.gdextension          拡張の宣言。プロジェクト直下に置く
+addons/godot_servo/bin/          ビルド成果物 (commit しない)
+  windows/godot_servo.x86_64.dll
+  windows/libEGL.dll             ANGLE。拡張と同じフォルダに要る
+  windows/libGLESv2.dll
+demo/                            デモのシーンとページ
+project.godot
+scripts/build.ps1 | build.sh     ビルドして bin/ へ配る
+src/                             GDExtension 本体 (Rust)
+```
+
+配布物 (リリースの zip) は `godot_servo.gdextension` と `addons/godot_servo/` の
+2 つだけ。使う側のプロジェクトにそのまま置ける。
+
 ## ビルド
 
 ```sh
-cargo build                 # target/debug/godot_servo.dll
-./sync-demo.sh              # デモプロジェクトへ配る
+scripts/build.ps1                 # Windows。ビルドして bin/ へ配置 (debug)
+scripts/build.ps1 -Release
+./scripts/build.sh                # Linux / macOS
+./scripts/build.sh --release
 ```
 
-`build.rs` が mozangle のビルドした `libEGL.dll` / `libGLESv2.dll` を成果物の隣に
-コピーする。surfman が実行時に名前で `LoadLibrary` するので、この 2 つは拡張の
-DLL と同じフォルダに置く必要がある (`src/angle_loader.rs` が絶対パスで先読みする)。
+`build.rs` が mozangle のビルドした `libEGL.dll` / `libGLESv2.dll` を
+`target/<profile>/` へ写し、ビルドスクリプトがそれを `addons/godot_servo/bin/windows/`
+へ配る。surfman が実行時に名前で `LoadLibrary` するので、この 2 つは拡張の DLL と
+同じフォルダに要る (`src/angle_loader.rs` が絶対パスで先読みする)。
 
 ## デモ
 
 ```sh
-GODOT=~/.local/godot/4.7.2-stable/Godot_v4.7.2-stable_win64_console.exe
+export GODOT=~/.local/godot/4.7.2-stable/Godot_v4.7.2-stable_win64_console.exe
 
-"$GODOT" --path demo                              # 3D の in-game ブラウザ
-"$GODOT" --path demo res://scenes/flat.tscn       # 2D の確認用
-"$GODOT" --path demo res://scenes/autotest.tscn   # 入力とシグナルのセルフチェック
+scripts/build.ps1 -Run                 # 3D の in-game ブラウザ
+scripts/build.ps1 -Run -Scene flat     # 2D の確認用
+scripts/build.ps1 -Test                # 入力とシグナルのセルフチェック
 ```
 
-デモの `project.godot` は Windows のレンダラを `d3d12` にしている。既定の `vulkan`
-のままでも動くが、その場合は CPU リードバック経路になる。
+`project.godot` は Windows のレンダラを `d3d12` にしている。既定の `vulkan` の
+ままでも動くが、その場合は CPU リードバック経路になる。
 
 ## 使い方
 
@@ -140,15 +163,15 @@ WebGL2 と WebGPU はどちらも Servo 側の既定が無効なので、`ServoW
 `dom_webgpu_enabled` を立てている。
 
 ```sh
-"$GODOT" --path demo --quit-after 700 -- --page webgl          # 素の WebGL
-"$GODOT" --path demo --quit-after 700 -- --page three-legacy   # three.js r128
+scripts/build.ps1 -Run -Page webgl          # 素の WebGL
+scripts/build.ps1 -Run -Page three-legacy   # three.js r128
 
 # ES モジュールを使うページはローカルサーバ経由で開く。
 ( cd demo/web && python -m http.server 8731 --bind 127.0.0.1 & )
-"$GODOT" --path demo --quit-after 700 -- --page http://127.0.0.1:8731/three.html
+scripts/build.ps1 -Run -Page http://127.0.0.1:8731/three.html
 ```
 
-`--page` は `res://web/<name>.html` を開く。`http` で始まる文字列を渡すとそのまま
+`-Page` は `res://demo/web/<name>.html` を開く。`http` で始まる文字列を渡すとそのまま
 URL として扱う。
 
 ### WebGPU の状態

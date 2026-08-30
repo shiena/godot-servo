@@ -1,0 +1,25 @@
+[configuration]
+
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = "4.4"
+; Servo はプロセスに 1 度しか初期化できないので、ホットリロードは不可。
+reloadable = false
+
+[libraries]
+
+; scripts/build.ps1 / build.sh が cargo の成果物をこの場所へ置く。
+; debug / release を分けていないのは、Godot 側のビルド種別と Rust のプロファイルを
+; 一致させる理由がないため。どちらの Godot からも同じバイナリを読む。
+windows.x86_64 = "res://addons/godot_servo/bin/windows/godot_servo.x86_64.dll"
+linux.x86_64 = "res://addons/godot_servo/bin/linux/libgodot_servo.x86_64.so"
+macos = "res://addons/godot_servo/bin/macos/libgodot_servo.dylib"
+
+[dependencies]
+
+; ANGLE。surfman が実行時に `LoadLibrary("libEGL.dll")` と名前で掴むので、拡張の
+; DLL と同じフォルダに要る (src/angle_loader.rs が絶対パスで先読みする)。
+; mozangle がビルドしたものを scripts/build.* が配る。
+windows.x86_64 = {
+"res://addons/godot_servo/bin/windows/libEGL.dll" : "",
+"res://addons/godot_servo/bin/windows/libGLESv2.dll" : ""
+}

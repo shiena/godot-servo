@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://cservoautotest"]
 
-[ext_resource type="Script" path="res://scripts/autotest.gd" id="1_autotest"]
+[ext_resource type="Script" path="res://demo/autotest.gd" id="1_autotest"]
 
 [node name="AutoTest" type="Node"]
 script = ExtResource("1_autotest")

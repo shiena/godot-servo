@@ -54,7 +54,7 @@ func _local_page_url() -> String:
 	# http(s):// を直接渡すこともできる。ES モジュールは file:// では読めないため。
 	if page.begins_with("http"):
 		return page
-	var absolute := ProjectSettings.globalize_path("res://web/%s.html" % page)
+	var absolute := ProjectSettings.globalize_path("res://demo/web/%s.html" % page)
 	return "file:///" + absolute.replace("\\", "/").trim_prefix("/")
 
 
