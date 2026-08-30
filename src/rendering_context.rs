@@ -189,9 +189,9 @@ impl GodotRenderingContext {
 
         let width = size.width as i32;
         let height = size.height as i32;
-        let mut pixels = self
-            .gleam_gl
-            .read_pixels(0, 0, width, height, gl::RGBA, gl::UNSIGNED_BYTE);
+        let mut pixels =
+            self.gleam_gl
+                .read_pixels(0, 0, width, height, gl::RGBA, gl::UNSIGNED_BYTE);
 
         let error = self.gleam_gl.get_error();
         if error != gl::NO_ERROR {

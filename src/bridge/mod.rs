@@ -42,10 +42,7 @@ pub trait TextureBridge {
 ///
 /// GPU 経路の初期化に失敗した場合は警告を出して CPU 経路に落ちる。
 /// 「対応レンダラでないと起動しない拡張」にはしない。
-pub fn create(
-    context: &GodotRenderingContext,
-    size: PhysicalSize<u32>,
-) -> Box<dyn TextureBridge> {
+pub fn create(context: &GodotRenderingContext, size: PhysicalSize<u32>) -> Box<dyn TextureBridge> {
     let driver = RenderingServer::singleton()
         .get_current_rendering_driver_name()
         .to_string();

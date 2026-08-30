@@ -28,6 +28,7 @@ func _ready() -> void:
 	browser.bridge_event.connect(_on_bridge_event)
 	browser.script_result.connect(_on_script_result)
 	browser.load_finished.connect(_on_load_finished)
+	browser.ime_requested.connect(_on_ime_requested)
 
 	_run()
 
@@ -57,7 +58,24 @@ func _run() -> void:
 	_click(button_point)
 	await _expect("click -> onclick -> bridge_event", "buy", 8.0)
 
-	# 4. ホイールを転送してスクロールが動くか。
+	# 4. テキスト欄をクリックすると Servo が IME を要求してくるか。
+	var input_point := await _element_center("#name")
+	print("  -> click input at ", input_point)
+	_click(input_point)
+	var requested := await _wait_for(func() -> bool: return ime_caret != Rect2(), 8.0)
+	_check("focus input -> ime_requested", requested, "caret %s" % ime_caret)
+
+	# 5. 未確定文字列を送り込んで、確定した文字が入力欄に入るか。
+	browser.feed_ime_composition("start", "に")
+	await get_tree().process_frame
+	browser.feed_ime_composition("update", "にほん")
+	await get_tree().process_frame
+	browser.feed_ime_composition("end", "日本語")
+	await _sleep(0.5)
+	var value := await _input_value("#name")
+	_check("ime composition -> input value", value == "日本語", "value '%s'" % value)
+
+	# 6. ホイールを転送してスクロールが動くか。
 	scrolled_before = await _scroll_position()
 	for i in 8:
 		_wheel(Vector2(VIEW_SIZE) * 0.5, -1)
@@ -102,6 +120,10 @@ var _last_event_name := ""
 var _script_values: Dictionary = {}
 var _scroll_id := -1
 var _scroll_value := 0.0
+var _element_id := -1
+var _element_point := Vector2.ZERO
+var _string_id := -1
+var _string_value := ""
 
 
 func _on_bridge_event(name: String, payload: String) -> void:
@@ -115,10 +137,40 @@ func _on_script_result(id: int, value: Variant) -> void:
 		button_point = Vector2(value[0], value[1])
 	if id == _scroll_id and value is float:
 		_scroll_value = value
+	if id == _element_id and value is Array and value.size() == 2:
+		_element_point = Vector2(value[0], value[1])
+	if id == _string_id and value is String:
+		_string_value = value
 
 
 func _on_load_finished() -> void:
 	print("  <- load finished")
+
+
+var ime_caret := Rect2()
+
+
+func _on_ime_requested(caret: Rect2, multiline: bool) -> void:
+	ime_caret = caret
+	print("  <- ime_requested ", caret, " multiline=", multiline)
+
+
+## セレクタで指した要素の中心を WebView のピクセル座標で返す。
+func _element_center(selector: String) -> Vector2:
+	_element_point = Vector2.ZERO
+	_element_id = browser.evaluate_javascript(
+		"(function(){var r=document.querySelector('%s').getBoundingClientRect();"
+		% selector + "return [r.x+r.width/2, r.y+r.height/2];})()")
+	await _wait_for(func() -> bool: return _element_point != Vector2.ZERO, 5.0)
+	return _element_point
+
+
+func _input_value(selector: String) -> String:
+	_string_value = ""
+	_string_id = browser.evaluate_javascript(
+		"document.querySelector('%s').value" % selector)
+	await _wait_for(func() -> bool: return _string_value != "", 5.0)
+	return _string_value
 
 
 func _scroll_position() -> float:

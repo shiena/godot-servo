@@ -7,14 +7,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use dpi::PhysicalSize;
-use godot::classes::{INode, InputEvent, InputEventKey, InputEventMouseButton, InputEventMouseMotion, Node, Texture2D};
+use godot::classes::notify::NodeNotification;
+use godot::classes::{
+    DisplayServer, INode, InputEvent, InputEventKey, InputEventMouseButton, InputEventMouseMotion,
+    Node, Texture2D,
+};
 use godot::global::{Key as GodotKey, MouseButton as GodotMouseButton};
 use godot::prelude::*;
 use servo::{
-    Code, DevicePoint, PrefValue, InputEvent as ServoInputEvent, JSValue, Key, KeyState, KeyboardEvent,
-    Location, Modifiers, MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, Servo,
-    ServoBuilder, UserContentManager, UserScript, WebView, WebViewBuilder, WheelDelta, WheelEvent,
-    WheelMode,
+    Code, CompositionEvent, CompositionState, DevicePoint, ImeEvent, InputEvent as ServoInputEvent,
+    JSValue, Key, KeyState, KeyboardEvent, Location, Modifiers, MouseButton, MouseButtonAction,
+    MouseButtonEvent, MouseMoveEvent, PrefValue, Servo, ServoBuilder, UserContentManager,
+    UserScript, WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode,
 };
 
 use crate::bridge::{self, TextureBridge};
@@ -70,8 +74,24 @@ pub struct ServoWebView {
     #[init(val = false)]
     enable_webgpu: bool,
 
+    /// IME の候補ウィンドウを出す位置 (ウィンドウ座標)。
+    ///
+    /// WebView の中のキャレット位置をそのまま使うことはできない。3D の板に貼って
+    /// いる場合、板の中の座標と画面上の位置に対応がないため。`ime_requested`
+    /// シグナルでキャレットの矩形を受け取り、ゲーム側で射影した結果をここに
+    /// 入れてもらう。既定 (0, 0) はウィンドウ左上。
+    #[export]
+    ime_anchor: Vector2,
+
     inner: Option<Inner>,
     next_script_id: i64,
+
+    /// IME を起こしているか。編集可能な要素にフォーカスがある間だけ true。
+    ime_active: bool,
+    /// 変換中か。`CompositionState::Start` を一度だけ送るために持つ。
+    composing: bool,
+    /// 直前の未確定文字列。変化のない通知を捨てるために持つ。
+    last_preedit: GString,
 }
 
 #[godot_api]
@@ -88,6 +108,16 @@ impl INode for ServoWebView {
 
     fn exit_tree(&mut self) {
         self.stop();
+    }
+
+    /// IME の未確定文字列は入力イベントではなく通知で届く。
+    ///
+    /// 確定した文字列のほうは通常の `InputEventKey` (unicode 付き) として来るので、
+    /// `feed_input()` の既存の経路がそのまま処理する。
+    fn on_notification(&mut self, what: NodeNotification) {
+        if what == NodeNotification::OS_IME_UPDATE && self.ime_active {
+            self.sync_preedit();
+        }
     }
 }
 
@@ -137,6 +167,17 @@ impl ServoWebView {
     /// `evaluate_javascript()` の結果。`id` は呼び出し時の戻り値と対応する。
     #[signal]
     fn script_result(id: i64, value: Variant);
+
+    /// ページ内の編集可能な要素にフォーカスが入り、IME を起こした。
+    ///
+    /// `caret` は WebView 内のピクセル座標での矩形。候補ウィンドウを出す位置を
+    /// 決めるために、ゲーム側でこれを画面座標へ射影して `ime_anchor` に入れる。
+    #[signal]
+    fn ime_requested(caret: Rect2, multiline: bool);
+
+    /// フォーカスが外れて IME を落とした。
+    #[signal]
+    fn ime_dismissed();
 
     // ── 生存管理 ────────────────────────────────────────────────────────────
 
@@ -203,6 +244,9 @@ impl ServoWebView {
 
     #[func]
     fn stop(&mut self) {
+        if self.ime_active {
+            self.set_ime_enabled(false);
+        }
         if let Some(mut inner) = self.inner.take() {
             inner.bridge.release();
             drop(inner.webview);
@@ -351,9 +395,106 @@ impl ServoWebView {
     #[func]
     fn notify_pointer_left(&mut self) {
         if let Some(inner) = self.inner.as_ref() {
-            inner.webview.notify_input_event(ServoInputEvent::MouseMove(
-                MouseMoveEvent::new(DevicePoint::new(-1.0, -1.0).into()),
-            ));
+            inner
+                .webview
+                .notify_input_event(ServoInputEvent::MouseMove(MouseMoveEvent::new(
+                    DevicePoint::new(-1.0, -1.0).into(),
+                )));
+        }
+    }
+
+    // ── IME ─────────────────────────────────────────────────────────────────
+
+    /// 未確定文字列を直接送り込む。
+    ///
+    /// OS の IME に頼らず、ゲーム側で独自の入力 UI を作る場合の入口。
+    /// `state` は `"start"` / `"update"` / `"end"`。`"end"` の `text` が確定文字列。
+    #[func]
+    fn feed_ime_composition(&mut self, state: GString, text: GString) {
+        let state = match state.to_string().as_str() {
+            "start" => CompositionState::Start,
+            "update" => CompositionState::Update,
+            "end" => CompositionState::End,
+            other => {
+                godot_error!("godot-servo: unknown composition state '{other}'");
+                return;
+            }
+        };
+        self.send_composition(state, text.to_string());
+    }
+
+    /// 変換を取り消す。
+    #[func]
+    fn cancel_ime_composition(&mut self) {
+        if let Some(inner) = self.inner.as_ref() {
+            inner
+                .webview
+                .notify_input_event(ServoInputEvent::Ime(ImeEvent::Dismissed));
+        }
+        self.composing = false;
+        self.last_preedit = GString::new();
+    }
+
+    fn send_composition(&self, state: CompositionState, data: String) {
+        if let Some(inner) = self.inner.as_ref() {
+            inner
+                .webview
+                .notify_input_event(ServoInputEvent::Ime(ImeEvent::Composition(
+                    CompositionEvent { state, data },
+                )));
+        }
+    }
+
+    /// OS の IME が持っている未確定文字列を読んで Servo に流す。
+    ///
+    /// 空になったら変換の終わり。確定した文字列は別途 `InputEventKey` で届くので、
+    /// ここでは `End` を空データで送って未確定表示を消すだけにする。
+    fn sync_preedit(&mut self) {
+        let preedit = DisplayServer::singleton().ime_get_text();
+        if preedit == self.last_preedit {
+            return;
+        }
+        self.last_preedit = preedit.clone();
+
+        if preedit.is_empty() {
+            if self.composing {
+                self.composing = false;
+                self.send_composition(CompositionState::End, String::new());
+            }
+            return;
+        }
+
+        let state = if self.composing {
+            CompositionState::Update
+        } else {
+            self.composing = true;
+            CompositionState::Start
+        };
+        self.send_composition(state, preedit.to_string());
+    }
+
+    fn set_ime_enabled(&mut self, enabled: bool) {
+        let Some(window) = self.base().get_window() else {
+            return;
+        };
+        let window_id = window.get_window_id();
+        let mut display_server = DisplayServer::singleton();
+
+        if enabled {
+            display_server
+                .window_set_ime_position_ex(self.ime_anchor.to_vector2i())
+                .window_id(window_id)
+                .done();
+        }
+        display_server
+            .window_set_ime_active_ex(enabled)
+            .window_id(window_id)
+            .done();
+        self.ime_active = enabled;
+
+        if !enabled {
+            self.composing = false;
+            self.last_preedit = GString::new();
         }
     }
 
@@ -458,9 +599,8 @@ impl ServoWebView {
             return;
         };
 
-        inner
-            .webview
-            .notify_input_event(ServoInputEvent::Keyboard(KeyboardEvent::new_without_event(
+        inner.webview.notify_input_event(ServoInputEvent::Keyboard(
+            KeyboardEvent::new_without_event(
                 state,
                 key,
                 Code::Unidentified,
@@ -468,7 +608,8 @@ impl ServoWebView {
                 modifiers,
                 event.is_echo(),
                 false,
-            )));
+            ),
+        ));
     }
 
     /// 毎フレームの処理。Servo を回し、必要なら描き直し、溜まった通知を emit する。
@@ -536,6 +677,21 @@ impl ServoWebView {
                 }
                 ServoEvent::ScriptResult { id, value } => {
                     self.signals().script_result().emit(id, &value);
+                }
+                ServoEvent::ImeShow {
+                    x,
+                    y,
+                    width,
+                    height,
+                    multiline,
+                } => {
+                    self.set_ime_enabled(true);
+                    let caret = Rect2::new(Vector2::new(x, y), Vector2::new(width, height));
+                    self.signals().ime_requested().emit(caret, multiline);
+                }
+                ServoEvent::ImeHide => {
+                    self.set_ime_enabled(false);
+                    self.signals().ime_dismissed().emit();
                 }
             }
         }

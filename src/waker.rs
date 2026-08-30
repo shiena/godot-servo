@@ -3,8 +3,8 @@
 //! Servo は自前のスレッド群から `wake()` を呼ぶので、ここではフラグを立てるだけに
 //! とどめ、実際の `spin_event_loop()` は Godot のメインスレッド (`_process`) で行う。
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use servo::EventLoopWaker;
 

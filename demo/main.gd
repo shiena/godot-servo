@@ -12,6 +12,7 @@ const VIEW_SIZE := Vector2i(1280, 720)
 
 var browser: ServoWebView
 var screen: MeshInstance3D
+var camera: Camera3D
 var material: StandardMaterial3D
 var hud: RichTextLabel
 
@@ -41,6 +42,8 @@ func _build_browser() -> void:
 	browser.load_finished.connect(_on_load_finished)
 	browser.bridge_event.connect(_on_bridge_event)
 	browser.console_message.connect(_on_console_message)
+	browser.ime_requested.connect(_on_ime_requested)
+	browser.ime_dismissed.connect(_on_ime_dismissed)
 
 
 ## res:// のパスをブラウザが開ける file:// URL に直す。
@@ -91,6 +94,7 @@ func _build_environment() -> void:
 	var camera := Camera3D.new()
 	camera.position = Vector3(0.0, 0.0, 1.9)
 	add_child(camera)
+	self.camera = camera
 
 
 func _build_panel() -> void:
@@ -251,6 +255,39 @@ func _on_bridge_event(name: String, payload: String) -> void:
 
 func _on_console_message(level: String, message: String) -> void:
 	print("godot-servo: [", level, "] ", message)
+
+
+# ── IME ───────────────────────────────────────────────────────────────────
+
+## ページ内のテキスト欄にフォーカスが入ると呼ばれる。
+##
+## 変換候補のウィンドウは OS がウィンドウ座標で出すので、板の中のキャレット位置を
+## 画面座標へ射影して渡す。これをやらないと候補がウィンドウ左上に出る。
+func _on_ime_requested(caret: Rect2, _multiline: bool) -> void:
+	if camera == null:
+		return
+	# キャレットの左下 = 候補ウィンドウを出したい位置。
+	var bottom_left := Vector2(caret.position.x, caret.position.y + caret.size.y)
+	var world := _view_pixels_to_world(bottom_left)
+	browser.ime_anchor = camera.unproject_position(world)
+	_last_event = "IME 有効 (日本語入力できる)"
+	_refresh_hud("", "")
+
+
+func _on_ime_dismissed() -> void:
+	_last_event = "IME 無効"
+	_refresh_hud("", "")
+
+
+## `_world_to_view_pixels()` の逆。
+func _view_pixels_to_world(point: Vector2) -> Vector3:
+	var u := point.x / float(VIEW_SIZE.x)
+	var v := point.y / float(VIEW_SIZE.y)
+	var local := Vector3(
+		(u - 0.5) * PANEL_SIZE.x,
+		(0.5 - v) * PANEL_SIZE.y,
+		0.0)
+	return screen.global_transform * local
 
 
 # ── 動作確認用 ────────────────────────────────────────────────────────────

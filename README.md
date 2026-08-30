@@ -31,6 +31,8 @@ Verified on Windows with the Direct3D 12 renderer.
   OK   bridge_event (godot.emit)  (expected 'ready')
   OK   evaluate_javascript / script_result  (button at (95.2, 189.4))
   OK   click -> onclick -> bridge_event  (expected 'buy')
+  OK   focus input -> ime_requested  (caret [P: (28.0, 509.0), S: (220.0, 36.0)])
+  OK   ime composition -> input value  (value '日本語')
   OK   wheel -> scroll  (scrollTop 0 -> 608)
 --- 0 failed ---
 ```
@@ -147,6 +149,28 @@ The first form goes through a marked `console.log` that `show_console_message` p
 no navigation, so it leaves page state alone. The second intercepts navigation to the `godot:` scheme
 in `request_navigation` and denies it.
 
+### Type Japanese and other IME input
+
+When the page focuses an editable element, Servo notifies the extension, which turns on the
+operating system IME and emits `ime_requested(caret, multiline)`. The `caret` rectangle is in
+WebView pixels.
+
+The IME candidate window is placed by the OS in window coordinates, so the extension can't guess
+where a 3D panel appears on screen. Project the caret yourself and assign `ime_anchor`:
+
+```gdscript
+browser.ime_requested.connect(func(caret: Rect2, _multiline: bool) -> void:
+    var bottom_left := Vector2(caret.position.x, caret.position.y + caret.size.y)
+    browser.ime_anchor = camera.unproject_position(view_pixels_to_world(bottom_left))
+)
+```
+
+Both demo scenes do this. Without it, candidates appear at the top-left of the window.
+
+To drive composition from your own input UI instead of the OS IME, call
+`feed_ime_composition(state, text)` with `"start"`, `"update"`, or `"end"`. The text passed with
+`"end"` is what gets committed.
+
 ### API
 
 | | |
@@ -157,10 +181,12 @@ in `request_navigation` and denies it.
 | `load_url()`, `reload()`, `go_back()`, `go_forward()` | Navigation |
 | `evaluate_javascript(code) -> int` | The result arrives on `script_result(id, value)` |
 | `feed_input(event, position)`, `notify_pointer_left()` | Input |
+| `feed_ime_composition(state, text)`, `cancel_ime_composition()`, `ime_anchor` | IME |
 | `set_view_size_px(size)` | Resolution |
 
 Signals: `frame_updated`, `title_changed`, `url_changed`, `load_started`, `load_finished`,
-`cursor_changed`, `console_message`, `bridge_event`, `script_result`
+`cursor_changed`, `console_message`, `bridge_event`, `script_result`, `ime_requested`,
+`ime_dismissed`
 
 ## WebGL and WebGPU
 
@@ -248,7 +274,6 @@ driver has no such restriction, so that path passes the texture directly.
   `CompositorEffect` covers the Godot side, but the Servo side needs a fork that adds a
   `WebRenderImageHandlerType`.
 - **WebGPU**, for the reason above.
-- **IME.** `InputEvent::Ime` exists in Servo but isn't wired up.
 - **Multiple `ServoWebView` nodes.** They share one `Servo` instance by design, but that is untested.
 - **macOS and Linux on real hardware.**
 

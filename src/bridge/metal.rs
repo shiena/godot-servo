@@ -12,9 +12,7 @@
 //! 注意: この経路は Windows 上では一度もコンパイルできていない。
 
 use dpi::PhysicalSize;
-use godot::classes::rendering_device::{
-    DataFormat, TextureSamples, TextureType, TextureUsageBits,
-};
+use godot::classes::rendering_device::{DataFormat, TextureSamples, TextureType, TextureUsageBits};
 use godot::classes::{RenderingServer, Texture2D, Texture2Drd};
 use godot::prelude::*;
 use objc2::rc::Retained;
@@ -36,10 +34,7 @@ pub struct MetalBridge {
 }
 
 impl MetalBridge {
-    pub fn new(
-        context: &GodotRenderingContext,
-        size: PhysicalSize<u32>,
-    ) -> Result<Self, String> {
+    pub fn new(context: &GodotRenderingContext, size: PhysicalSize<u32>) -> Result<Self, String> {
         let metal_device = super::godot_logical_device()?;
 
         // バインド中のサーフェスから IOSurface を取り出す。`&Surface` が要るので
@@ -49,8 +44,7 @@ impl MetalBridge {
             .with_unbound_surface(|device, surface| device.native_surface(surface))
             .map_err(|error| format!("failed to take the surfman surface: {error:?}"))?;
 
-        let metal_texture =
-            unsafe { create_metal_texture(metal_device, &native_surface, size)? };
+        let metal_texture = unsafe { create_metal_texture(metal_device, &native_surface, size)? };
 
         let mut rendering_device = RenderingServer::singleton()
             .get_rendering_device()
@@ -107,8 +101,7 @@ impl TextureBridge for MetalBridge {
     fn release(&mut self) {
         if self.rd_texture.is_valid() {
             self.texture.set_texture_rd_rid(Rid::Invalid);
-            if let Some(mut rendering_device) =
-                RenderingServer::singleton().get_rendering_device()
+            if let Some(mut rendering_device) = RenderingServer::singleton().get_rendering_device()
             {
                 rendering_device.free_rid(self.rd_texture);
             }

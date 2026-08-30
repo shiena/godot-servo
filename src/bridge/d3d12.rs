@@ -19,9 +19,7 @@
 use dpi::PhysicalSize;
 use euclid::default::Size2D;
 use glow::HasContext;
-use godot::classes::rendering_device::{
-    DataFormat, TextureSamples, TextureType, TextureUsageBits,
-};
+use godot::classes::rendering_device::{DataFormat, TextureSamples, TextureType, TextureUsageBits};
 use godot::classes::{
     RdTextureFormat, RdTextureView, RenderingDevice, RenderingServer, Texture2D, Texture2Drd,
 };
@@ -54,10 +52,7 @@ pub struct D3d12Bridge {
 }
 
 impl D3d12Bridge {
-    pub fn new(
-        context: &GodotRenderingContext,
-        size: PhysicalSize<u32>,
-    ) -> Result<Self, String> {
+    pub fn new(context: &GodotRenderingContext, size: PhysicalSize<u32>) -> Result<Self, String> {
         let d3d11_device = angle_d3d11_device(context)?;
         let godot_device = super::godot_logical_device()?;
 
@@ -112,9 +107,8 @@ impl TextureBridge for D3d12Bridge {
             .surface_texture_object(&surface_texture)
             .ok_or("ANGLE returned no GL texture for the shared pbuffer")?;
 
-        let blit_result = unsafe {
-            blit_flipped(context.glow(), source_fbo, gl_texture, self.size)
-        };
+        let blit_result =
+            unsafe { blit_flipped(context.glow(), source_fbo, gl_texture, self.size) };
 
         // 包みは毎フレーム捨てる。中身の D3D11 テクスチャは COM 参照で生き続ける。
         let mut surface = device

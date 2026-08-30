@@ -40,6 +40,7 @@ func _ready() -> void:
 	browser.frame_updated.connect(_on_frame_updated)
 	browser.bridge_event.connect(_on_bridge_event)
 	browser.title_changed.connect(func(title: String) -> void: status.text = title)
+	browser.ime_requested.connect(_on_ime_requested)
 
 
 func _local_page_url() -> String:
@@ -79,6 +80,13 @@ func _on_frame_updated() -> void:
 	view.flip_v = browser.is_texture_flipped_v()
 	texture_bound = true
 	status.text = "経路: %s" % browser.get_backend_name()
+
+
+## 候補ウィンドウの位置。TextureRect の拡大率を戻して画面座標にする。
+func _on_ime_requested(caret: Rect2, _multiline: bool) -> void:
+	var scale := view.size / Vector2(VIEW_SIZE)
+	var bottom_left := Vector2(caret.position.x, caret.position.y + caret.size.y)
+	browser.ime_anchor = view.global_position + bottom_left * scale
 
 
 func _on_bridge_event(name: String, payload: String) -> void:

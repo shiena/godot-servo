@@ -20,6 +20,8 @@ Windows / D3D12 で動作を確認済み。
   OK   bridge_event (godot.emit)  (expected 'ready')
   OK   evaluate_javascript / script_result  (button at (95.2, 189.4))
   OK   click -> onclick -> bridge_event  (expected 'buy')
+  OK   focus input -> ime_requested  (caret [P: (28.0, 509.0), S: (220.0, 36.0)])
+  OK   ime composition -> input value  (value '日本語')
   OK   wheel -> scroll  (scrollTop 0 -> 608)
 --- 0 failed ---
 ```
@@ -134,6 +136,27 @@ JavaScript を書かずに、素のリンクでも飛ばせる。
 ナビゲーションを起こさないのでページの状態に影響しない。
 後者は `godot:` スキームへの遷移を `request_navigation` で横取りして `deny()` している。
 
+### 日本語入力 (IME)
+
+ページ内の編集可能な要素にフォーカスが入ると Servo が拡張に通知し、拡張が OS の IME を
+起こして `ime_requested(caret, multiline)` を出す。`caret` は WebView 内のピクセル座標。
+
+変換候補のウィンドウは OS がウィンドウ座標で出すため、3D の板が画面のどこにあるかは
+拡張からは分からない。キャレットを自分で射影して `ime_anchor` に入れる。
+
+```gdscript
+browser.ime_requested.connect(func(caret: Rect2, _multiline: bool) -> void:
+    var bottom_left := Vector2(caret.position.x, caret.position.y + caret.size.y)
+    browser.ime_anchor = camera.unproject_position(view_pixels_to_world(bottom_left))
+)
+```
+
+デモの 2 つのシーンはどちらもこれをやっている。やらないと候補がウィンドウ左上に出る。
+
+OS の IME ではなく独自の入力 UI から変換を流し込む場合は
+`feed_ime_composition(state, text)` を使う。`state` は `"start"` / `"update"` / `"end"` で、
+`"end"` に渡した文字列が確定する。
+
 ### API
 
 | | |
@@ -144,10 +167,12 @@ JavaScript を書かずに、素のリンクでも飛ばせる。
 | `load_url()` / `reload()` / `go_back()` / `go_forward()` | ナビゲーション |
 | `evaluate_javascript(code) -> int` | 結果は `script_result(id, value)` で返る |
 | `feed_input(event, position)` / `notify_pointer_left()` | 入力 |
+| `feed_ime_composition(state, text)` / `cancel_ime_composition()` / `ime_anchor` | IME |
 | `set_view_size_px(size)` | 解像度変更 |
 
 シグナル: `frame_updated`, `title_changed`, `url_changed`, `load_started`,
-`load_finished`, `cursor_changed`, `console_message`, `bridge_event`, `script_result`
+`load_finished`, `cursor_changed`, `console_message`, `bridge_event`, `script_result`,
+`ime_requested`, `ime_dismissed`
 
 ## WebGL / WebGPU
 
@@ -239,7 +264,6 @@ Vulkan ドライバは同じ判定に `|| created_from_extension` の例外を�
   Godot 側は `CompositorEffect` で足りるが、受け取る Servo 側に
   `WebRenderImageHandlerType` を足す fork が要る。
 - **WebGPU**。上記のとおりプロセスが落ちる。
-- IME。`InputEvent::Ime` は Servo 側にあるが未接続。
 - 複数 `ServoWebView` の同時利用。`Servo` 本体は共有する作りにしてあるが未検証。
 - macOS / Linux の実機確認。
 

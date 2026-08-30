@@ -8,7 +8,10 @@
 use std::cell::{Cell, RefCell};
 
 use godot::prelude::Variant;
-use servo::{ConsoleLogLevel, Cursor, LoadStatus, NavigationRequest, WebView, WebViewDelegate};
+use servo::{
+    ConsoleLogLevel, Cursor, EmbedderControl, LoadStatus, NavigationRequest, WebView,
+    WebViewDelegate,
+};
 use url::Url;
 
 /// `window.godot.emit()` が `console.log` に流し込むときの目印。
@@ -24,11 +27,31 @@ pub enum ServoEvent {
     LoadStarted,
     LoadFinished,
     CursorChanged(Cursor),
-    ConsoleMessage { level: String, message: String },
+    ConsoleMessage {
+        level: String,
+        message: String,
+    },
     /// ページ側から Godot に投げられたイベント。
-    Bridge { name: String, payload: String },
+    Bridge {
+        name: String,
+        payload: String,
+    },
     /// `evaluate_javascript()` の結果。
-    ScriptResult { id: i64, value: Variant },
+    ScriptResult {
+        id: i64,
+        value: Variant,
+    },
+    /// 編集可能な要素にフォーカスが入った。IME を起こす。
+    /// 座標は WebView 内のピクセルで、キャレットの矩形。
+    ImeShow {
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        multiline: bool,
+    },
+    /// フォーカスが外れた。IME を落とす。
+    ImeHide,
 }
 
 #[derive(Default)]
@@ -103,6 +126,28 @@ impl WebViewDelegate for ServoEventSink {
             level: format!("{level:?}").to_lowercase(),
             message,
         });
+    }
+
+    /// 編集可能な要素にフォーカスが入ると Servo がこれを寄こす。
+    ///
+    /// IME 以外の種類 (`<select>` のピッカーやダイアログ) はここで drop している。
+    /// drop すると Servo 側で「キャンセルされた」扱いになるので、扱えないものを
+    /// 黙って握り潰すより素直な既定になる。
+    fn show_embedder_control(&self, _webview: WebView, embedder_control: EmbedderControl) {
+        if let EmbedderControl::InputMethod(control) = embedder_control {
+            let rect = control.position();
+            self.push(ServoEvent::ImeShow {
+                x: rect.min.x as f32,
+                y: rect.min.y as f32,
+                width: rect.width() as f32,
+                height: rect.height() as f32,
+                multiline: control.multiline(),
+            });
+        }
+    }
+
+    fn hide_embedder_control(&self, _webview: WebView, _control_id: servo::EmbedderControlId) {
+        self.push(ServoEvent::ImeHide);
     }
 
     /// `godot:` スキームへの遷移を横取りしてイベントに変換する。
