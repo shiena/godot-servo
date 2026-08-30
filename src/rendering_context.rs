@@ -182,36 +182,52 @@ impl GodotRenderingContext {
 
     /// FBO の中身を上下反転して RGBA8 で吸い出す。CPU フォールバック用。
     pub fn read_pixels_flipped(&self, size: PhysicalSize<u32>) -> Option<Vec<u8>> {
+        let mut pixels = vec![0u8; size.width as usize * size.height as usize * 4];
+        self.read_pixels_flipped_into(size, &mut pixels)
+            .then_some(pixels)
+    }
+
+    /// `read_pixels_flipped()` の、渡された領域へ直接書く版。
+    ///
+    /// CPU フォールバックは毎フレームこれを呼ぶ。確保を呼び出し側で使い回せるように
+    /// してあり、1 フレームあたり数 MB の確保と複製が消える。
+    /// `out` の長さは `width * height * 4` ちょうどでなければならない。
+    pub fn read_pixels_flipped_into(&self, size: PhysicalSize<u32>, out: &mut [u8]) -> bool {
+        let stride = size.width as usize * 4;
+        let rows = size.height as usize;
+        if out.len() != stride * rows {
+            return false;
+        }
+
         let fbo = self.framebuffer();
         self.gleam_gl.bind_framebuffer(gl::FRAMEBUFFER, fbo);
         // OSMesa の既知バグ回避 (servo 本体の実装に合わせる)。
         self.gleam_gl.bind_vertex_array(0);
 
-        let width = size.width as i32;
-        let height = size.height as i32;
-        let mut pixels =
-            self.gleam_gl
-                .read_pixels(0, 0, width, height, gl::RGBA, gl::UNSIGNED_BYTE);
+        self.gleam_gl.read_pixels_into_buffer(
+            0,
+            0,
+            size.width as i32,
+            size.height as i32,
+            gl::RGBA,
+            gl::UNSIGNED_BYTE,
+            out,
+        );
 
         let error = self.gleam_gl.get_error();
         if error != gl::NO_ERROR {
             log::warn!("glReadPixels left GL error 0x{error:x}");
-            return None;
+            return false;
         }
 
         // GL は左下原点なので、行単位で上下を入れ替える。
-        let stride = size.width as usize * 4;
-        let rows = size.height as usize;
-        if pixels.len() < stride * rows {
-            return None;
-        }
         for y in 0..rows / 2 {
             let top = y * stride;
             let bottom = (rows - 1 - y) * stride;
-            let (head, tail) = pixels.split_at_mut(bottom);
+            let (head, tail) = out.split_at_mut(bottom);
             head[top..top + stride].swap_with_slice(&mut tail[..stride]);
         }
-        Some(pixels)
+        true
     }
 }
 

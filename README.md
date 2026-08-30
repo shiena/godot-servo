@@ -328,6 +328,17 @@ The D3D12 path therefore copies the imported texture into a Godot-owned one with
 `RenderingDevice.texture_copy()`. The copy stays on the GPU, so no CPU round trip appears. The Metal
 driver has no such restriction, so that path hands the texture over directly.
 
+### The CPU fallback allocates nothing per frame
+
+The readback path keeps two pixel buffers and two `Image` objects and alternates between them.
+`PackedByteArray` is copy-on-write, so writing into the buffer the current `Image` references would
+duplicate it; writing into the other one leaves the reference count at 1, and `glReadPixels` lands
+straight in what becomes the texture's contents. Two sets are enough because a threaded
+`RenderingServer` consumes the queued `texture_2d_update` within one frame.
+
+At 1280×720 in a release build, that takes the per-frame update from 1.93 ms to 1.34 ms, and removes
+about 7 MB of allocation and one full-frame copy per frame.
+
 ### Why jemalloc is rebuilt on Linux
 
 Servo pulls jemalloc in through `servo-allocator`, and jemalloc defaults to initial-exec TLS. That

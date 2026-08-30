@@ -324,6 +324,17 @@ Vulkan ドライバは `|| created_from_extension` の除外条件でこの場�
 Godot 所有のテクスチャに複製します。コピーは GPU 内で完結するので、CPU の往復は発生しません。
 Metal ドライバにはこの制限が無いので、そちらはテクスチャをそのまま渡します。
 
+### CPU フォールバックが毎フレーム確保しない理由
+
+読み戻し経路はピクセルの置き場と `Image` を 2 組持ち、フレームごとに交互に使います。
+`PackedByteArray` は copy-on-write なので、いま `Image` が参照している側に書くとそこで複製が
+走ります。もう一方に書けば参照は 1 つのままで、`glReadPixels` の出力先がそのまま
+テクスチャの中身になります。2 組で足りるのは、レンダリングサーバが別スレッドでも
+積んだ `texture_2d_update` を 1 フレーム以内に消化するためです。
+
+1280×720 の release ビルドで、1 フレームあたりの更新が 1.93 ms から 1.34 ms になり、
+毎フレームの確保 約 7 MB と全画面 1 回分の複製が消えます。
+
 ### Linux で jemalloc をビルドし直す理由
 
 Servo は `servo-allocator` を通じて jemalloc を取り込みますが、jemalloc は既定で initial-exec TLS を
