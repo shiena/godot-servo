@@ -219,7 +219,7 @@ Servo puts WebGL and WebGPU output on the same shared texture. `demo/web/` holds
 | WebGL 2.0 | Works, with `enable_webgl2` |
 | three.js r128 | Works |
 | three.js 0.180 (current) | Works, over WebGL 2.0 |
-| WebGPU | **Not usable. The process crashes** |
+| WebGPU | **Not built in. It crashes** |
 
 ![three.js 0.180 rendering over WebGL 2.0](shot_three.png)
 
@@ -239,7 +239,10 @@ scripts/build.ps1 -Run -Page http://127.0.0.1:8731/three.html
 
 ### WebGPU details
 
-Build with the `webgpu` feature and set `enable_webgpu`, and `navigator.gpu` appears.
+The `webgpu` feature is **off**, so `navigator.gpu` does not exist in a default build. Turning it on
+also drags wgpu and naga into the binary, which is not worth carrying for something that crashes.
+
+Enable the feature and set `enable_webgpu`, and `navigator.gpu` appears.
 `requestAdapter()`, `requestDevice()`, and compute shaders all work correctly:
 `demo/web/webgpu-compute.html` reads back `[0, 20, 126]` from the GPU.
 

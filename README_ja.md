@@ -207,7 +207,7 @@ Servo は WebGL / WebGPU の描画結果も同じ共有テクスチャに乗せ�
 | WebGL 2.0 | 動く (`enable_webgl2` が必要) |
 | three.js r128 | 動く |
 | three.js 0.180 (最新) | 動く (WebGL 2.0 経由) |
-| WebGPU | **実用にならない。プロセスが落ちる** |
+| WebGPU | **ビルドに含めていない。落ちるため** |
 
 ![three.js 0.180 を WebGL 2.0 で描画したところ](shot_three.png)
 
@@ -229,8 +229,10 @@ URL として扱う。
 
 ### WebGPU の状態
 
-`webgpu` feature を有効にしてビルドし、`enable_webgpu` を立てると
-`navigator.gpu` は生えて、`requestAdapter()` / `requestDevice()` /
+`webgpu` feature は**入れていない**ので、既定のビルドに `navigator.gpu` は無い。
+有効にすると wgpu と naga がまるごとバイナリに乗るうえ、落ちるものを同梱することになる。
+
+feature を有効にしてビルドし、`enable_webgpu` を立てると `navigator.gpu` は生えて、`requestAdapter()` / `requestDevice()` /
 コンピュートシェーダの実行と読み戻しまでは正しく動く
 (`demo/web/webgpu-compute.html` が `[0, 20, 126]` を返す)。
 

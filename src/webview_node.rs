@@ -66,10 +66,13 @@ pub struct ServoWebView {
 
     /// WebGPU を有効にする。既定は無効。
     ///
-    /// Servo 0.5.0 の WebGPU はこの組み込みでは実用にならない。デバイス生成と
-    /// コンピュートシェーダまでは動くが、プロセスが segfault で落ちる
-    /// (canvas への提示を試みた場合は確実に、コンピュートのみでも終了時に)。
-    /// 追試したい場合だけ true にすること。
+    /// 既定のビルドには servo の `webgpu` feature を入れていないので、これを
+    /// true にしても `navigator.gpu` は生えない。feature を入れ直したうえで
+    /// 追試したい場合のためだけに残してある。
+    ///
+    /// feature を入れると、デバイス生成とコンピュートシェーダまでは動くが
+    /// プロセスが segfault で落ちる (canvas への提示を試みた場合は確実に、
+    /// コンピュートのみでも終了時に)。
     #[export]
     #[init(val = false)]
     enable_webgpu: bool,

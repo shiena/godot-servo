@@ -9,7 +9,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 godot = { version = "0.5.5", features = ["api-4-4"] }
-servo = { version = "0.5.0", features = ["webgpu"] }
+# webgpu feature は入れていない。Servo 0.5.0 の WebGPU はこの組み込みでは
+# プロセスが segfault で落ちるうえ、wgpu と naga がまるごとバイナリに乗る。
+# 試す場合は README の「WebGPU」の節を参照。
+servo = "0.5.0"
 surfman = { version = "0.13.0", features = ["chains"] }
 glow = "0.17"
 gleam = "0.15"
