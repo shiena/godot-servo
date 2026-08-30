@@ -43,7 +43,7 @@ Verified on Windows with the Direct3D 12 renderer.
 | Windows / D3D12 | ANGLE D3D11 shared texture (NT handle) to `ID3D12Resource` | **Verified** |
 | macOS / Metal | IOSurface to `MTLTexture` | Written, never run |
 | Windows / Vulkan (default) | — | Falls back to CPU readback |
-| Linux / Vulkan | — | **Builds, but the library fails to load** |
+| Linux / Vulkan | — | Falls back to CPU readback, verified on WSL2 |
 | Anything else | `glReadPixels` to `ImageTexture` | Verified |
 
 Call `ServoWebView.get_backend_name()` to see which path a running instance took.
@@ -287,19 +287,7 @@ driver has no such restriction, so that path passes the texture directly.
 - **WebGPU**, for the reason above.
 - **Multiple `ServoWebView` nodes.** They share one `Servo` instance by design, but that is untested.
 - **macOS on real hardware.** It builds in CI; nobody has run it.
-- **Linux at all.** It builds, but Godot cannot `dlopen` the result:
-
-  ```
-  cannot allocate memory in static TLS block
-  ```
-
-  The shared object carries the `STATIC_TLS` dynamic flag from a single local
-  initial-exec TLS relocation, and its `PT_TLS` segment is 5256 bytes against glibc's
-  1664-byte surplus. Raising the surplus with
-  `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=4194304` gets it loaded, and Godot then
-  segfaults before any script runs. A GDExtension has to be `dlopen`-safe, so the fix is to
-  find the translation unit emitting initial-exec TLS and rebuild it as global-dynamic.
-  Verified on WSL2 (Ubuntu 24.04, Godot 4.7.2, llvmpipe).
+- **A GPU sharing path for Linux.** It runs, but through CPU readback.
 
 ## Related projects
 
