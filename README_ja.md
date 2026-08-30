@@ -93,6 +93,10 @@ scripts/build.ps1 -Test                # 入力とシグナルのセルフチェ
 `project.godot` は Windows のレンダラを `d3d12` にしている。既定の `vulkan` の
 ままでも動くが、その場合は CPU リードバック経路になる。
 
+拡張自体は Godot 4.4 以降で動くが、`project.godot` の宣言は `4.7` になっている。
+Godot はプロジェクトを開くたびに `config/features` を自分のバージョンへ書き換えるため。
+4.4 〜 4.6 ではデモにバージョン警告が出るが、アドオン側には影響しない。
+
 ## 使い方
 
 ```gdscript

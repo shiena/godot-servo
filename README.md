@@ -106,6 +106,10 @@ scripts/build.ps1 -Test                # input and signal self check
 `project.godot` sets the Windows renderer to `d3d12`. The demo still runs on the default `vulkan`
 renderer, but it takes the CPU readback path.
 
+The extension itself supports Godot 4.4 and later, but `project.godot` declares `4.7`, because Godot
+rewrites `config/features` to its own version whenever it opens a project. On 4.4 through 4.6 the
+demo warns about the version; the addon is unaffected.
+
 ## Quickstart
 
 ```gdscript
