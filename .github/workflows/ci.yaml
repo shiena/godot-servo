@@ -65,9 +65,7 @@ jobs:
           path: addons/godot_servo/bin/windows/
           if-no-files-found: error
 
-  # macOS と Linux は実機で動かしたことがない。ビルドが壊れていないかだけ見る。
-  # 以前は continue-on-error を付けていたが、落ちても全体が緑に見えて実態と
-  # 食い違うため外した。3 つとも通るようになった今は素直に落とす。
+  # ビルドが壊れていないかを見る。実機での確認は別途行う。
   unix:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -100,7 +98,6 @@ jobs:
           path: addons/godot_servo/bin/
           if-no-files-found: error
 
-  # Android は実機で動かしたことがない。ビルドが壊れていないかだけ見る。
   # GPU 共有 (AHardwareBuffer) は Compatibility レンダラでのみ成立し、
   # Forward+ / Mobile では CPU リードバックに落ちる。
   android:

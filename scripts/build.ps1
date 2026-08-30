@@ -67,10 +67,9 @@ Copy-Item -Force $built (Join-Path $binDir 'godot_servo.x86_64.dll')
 # ANGLE。mozangle が自分の OUT_DIR に置いたものを拾う。これが無いと surfman の
 # LoadLibrary が失敗して Servo が起動しない。
 #
-# 以前は build.rs でコピーしていたが、cargo は自クレートの build.rs と依存クレートの
-# build.rs の実行順を保証しない。ローカルでは mozangle が先にビルド済みだったので
-# 通っていただけで、CI のクリーンビルドでは DLL がまだ存在しなかった。
-# cargo build の完了後に探せば順序の問題は起きない。
+# build.rs では拾えない。cargo は自クレートの build.rs と依存クレートの build.rs の
+# 実行順を保証しないので、mozangle の OUT_DIR がまだ存在しないことがある。
+# cargo build の完了後に探せば順序に依存しない。
 # feature を変えると cargo は別の fingerprint で mozangle を作り直すので、
 # mozangle-* が複数残る。古いものを掴まないよう新しい順に見る。
 $angleDir = Get-ChildItem (Join-Path $target 'build') -Directory -Filter 'mozangle-*' -ErrorAction SilentlyContinue |

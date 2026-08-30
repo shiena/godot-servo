@@ -1,17 +1,17 @@
-# godot_servo アドオン
+# godot_servo addon
 
-Servo を GDExtension として組み込むためのアドオン。
+The GDExtension that embeds Servo. See the [repository README](../../README.md) for what it does
+and how to use it.
 
-`bin/` はビルド成果物なので、リポジトリには入っていない。クローン後に一度
-ビルドすること。
+`bin/` holds build output and is not committed. Build once after cloning:
 
 ```sh
 scripts/build.ps1     # Windows
-./scripts/build.sh    # Linux / macOS
+./scripts/build.sh    # Linux and macOS
 ```
 
-リリースの zip には `bin/` 込みで入っている。その場合はこのフォルダごと、
-`godot_servo.gdextension` と一緒にプロジェクトへ置けばよい。
+Release archives contain `bin/`. Drop this folder into your project alongside
+`godot_servo.gdextension`:
 
 ```
 your-project/
@@ -19,9 +19,9 @@ your-project/
   addons/godot_servo/bin/...
 ```
 
-`.gdextension` をアドオンの中ではなくプロジェクト直下に置いているのは、
-Windows で ANGLE の DLL (`libEGL.dll` / `libGLESv2.dll`) を拡張本体と同じ
-フォルダに置く必要があり、`[dependencies]` の相対解決を素直にするため。
+The `.gdextension` sits at the project root rather than inside the addon because on Windows the
+ANGLE DLLs (`libEGL.dll` and `libGLESv2.dll`) have to live in the same folder as the extension, and
+keeping it at the root makes the relative paths in `[dependencies]` straightforward.
 
-エディタプラグインは無い。`ServoWebView` クラスは GDExtension が自分で登録するので、
-プラグインの有効化は不要。
+There is no editor plugin. The extension registers the `ServoWebView` class itself, so nothing needs
+enabling in the Plugins tab.

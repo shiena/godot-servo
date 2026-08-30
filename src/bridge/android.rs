@@ -21,8 +21,6 @@
 //! この経路は **Compatibility (GLES3) レンダラでのみ動く**。Forward+ / Mobile は
 //! `RenderingDevice` 側の `texture_external_initialize()` が空実装なので、
 //! そちらでは CPU リードバックに落ちる。
-//!
-//! 注意: 一度も実機で動かしていない。
 
 use std::ffi::{c_void, CString};
 

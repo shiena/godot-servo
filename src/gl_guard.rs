@@ -5,10 +5,9 @@
 //! GL コンテキストを誰も使っていないので、奪いっぱなしでも実害が無い。
 //!
 //! Android の Compatibility (GLES3) レンダラだけは事情が違う。Godot 自身が同じ
-//! スレッドで EGL コンテキストを持って描画しているため、返さずにいると Godot が
-//! Servo のコンテキストに向かって描画・シェーダコンパイルを始めてしまう。
-//! 実際 Beam Pro では `CopyShaderGLES3: Program linking failed` のあと、Godot の
-//! 描画中に SIGSEGV していた。
+//! スレッドで EGL コンテキストを持って描画している。借りたまま返さないと、Godot は
+//! Servo のコンテキストに向かってシェーダをコンパイルし描画することになり、
+//! 描画が壊れるか異常終了する。
 //!
 //! `HostContext::capture()` で今カレントなものを控え、drop で戻す。
 
