@@ -22,6 +22,7 @@ Windows / D3D12 で動作を確認済み。
   OK   click -> onclick -> bridge_event  (expected 'buy')
   OK   focus input -> ime_requested  (caret [P: (28.0, 509.0), S: (220.0, 36.0)])
   OK   ime composition -> input value  (value '日本語')
+  OK   os ime sequence -> committed once  (value '日本')
   OK   wheel -> scroll  (scrollTop 0 -> 608)
 --- 0 failed ---
 ```

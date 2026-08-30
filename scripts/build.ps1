@@ -102,6 +102,24 @@ if ($Run -or $Test) {
     if ($userArgs.Count -gt 0) { $godotArgs += @('--') + $userArgs }
 
     Say "$Godot $($godotArgs -join ' ')"
-    & $Godot @godotArgs
-    if ($LASTEXITCODE -ne 0) { Die "Godot exited with $LASTEXITCODE" }
+
+    # `& $Godot` ではなく Start-Process を使う。Godot の非コンソール版
+    # (Godot_v*_win64.exe。setup-godot が CI に入れるのもこれ) は自分をコンソールから
+    # 切り離すため、`&` は待たずに戻り、出力も $LASTEXITCODE も得られない。
+    # 出力はファイルに落としてから流し直す。
+    # New-TemporaryFile は Windows PowerShell 5.1 に無いことがある。
+    # .NET の API なら 5.1 でも 7 でも同じように使える。
+    $stdout = [System.IO.Path]::GetTempFileName()
+    $stderr = [System.IO.Path]::GetTempFileName()
+    try {
+        $process = Start-Process -FilePath $Godot -PassThru -NoNewWindow -Wait `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
+            -ArgumentList ($godotArgs | ForEach-Object { '"{0}"' -f $_ })
+        # 明示しないと 5.1 が ANSI で読み、日本語の出力が化ける。
+        Get-Content $stdout -Encoding UTF8 -ErrorAction SilentlyContinue | Write-Host
+        Get-Content $stderr -Encoding UTF8 -ErrorAction SilentlyContinue | Write-Host
+        if ($process.ExitCode -ne 0) { Die "Godot exited with $($process.ExitCode)" }
+    } finally {
+        Remove-Item $stdout, $stderr -Force -ErrorAction SilentlyContinue
+    }
 }
