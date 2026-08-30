@@ -11,6 +11,8 @@ const WebAssets = preload("res://demo/web_assets.gd")
 const PANEL_SIZE := Vector2(1.92, 1.08)
 ## WebView の解像度 (ピクセル)。
 const VIEW_SIZE := Vector2i(1280, 720)
+## カメラを置く距離。板がだいたい画面いっぱいに映る位置。
+const CAMERA_Z := 1.0
 
 var browser: ServoWebView
 var screen: MeshInstance3D
@@ -78,20 +80,29 @@ func _build_environment() -> void:
 	add_child(light)
 
 	# 板が「ゲームの中に置かれている」ことが分かるように、後ろに適当な箱を並べる。
-	for i in 7:
+	#
+	# 板の真後ろに置くと隠れて見えない。カメラから見て板の縁が作る影の外側、
+	# つまり左右の帯に振り分ける。影の幅も画面の幅も距離に比例するので、
+	# 奥行きに応じた倍率で置けばどの距離でも帯の中に入る。
+	for i in 8:
+		var depth := randf_range(-6.0, -2.0)
+		var distance := CAMERA_Z - depth
+		var side := 1.0 if i % 2 == 0 else -1.0
 		var box := MeshInstance3D.new()
 		box.mesh = BoxMesh.new()
-		box.position = Vector3(randf_range(-4.0, 4.0), randf_range(-1.5, 1.5), randf_range(-6.0, -2.0))
+		box.position = Vector3(
+			side * randf_range(1.05, 1.22) * distance,
+			randf_range(-0.5, 0.5) * distance,
+			depth)
 		box.rotation = Vector3(randf(), randf(), randf()) * TAU
-		box.scale = Vector3.ONE * randf_range(0.3, 0.9)
+		box.scale = Vector3.ONE * randf_range(0.25, 0.55) * (distance / 3.0)
 		var box_material := StandardMaterial3D.new()
 		box_material.albedo_color = Color(0.25, 0.30, 0.42)
 		box.material_override = box_material
 		add_child(box)
 
 	var camera := Camera3D.new()
-	# 板 (1.92 x 1.08 m) がだいたい画面いっぱいに映る距離。
-	camera.position = Vector3(0.0, 0.0, 1.0)
+	camera.position = Vector3(0.0, 0.0, CAMERA_Z)
 	add_child(camera)
 	self.camera = camera
 

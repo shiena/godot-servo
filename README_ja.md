@@ -17,12 +17,12 @@ Godot 4 に組み込み、描画結果を **GPU テクスチャのまま** Godot
 - **オーバーレイではなく、ゲームの中。** 結果は `Texture2D` なので、3D パネルにもマテリアルにも `TextureRect` にも貼れます。
 - **マウス・タッチ・キーボード入力**。日本語などの IME 変換にも対応します。
 - **双方向のやり取り。** 入力をページへ転送し、ページのイベントをシグナルで受け取ります。
-- **必ず起動するフォールバック。** GPU 共有が使えない環境では、起動を諦めずに CPU 読み戻しへ切り替えます。
+- **必ず起動するフォールバック。** GPU 共有が使えない環境では、起動を諦めずに CPU リードバックへ切り替えます。
 
 ## 対応プラットフォーム
 
 各プラットフォームで、そのグラフィックススタックが用意している仕組みを使って GPU メモリを共有します。
-共有経路が無い組み合わせでは `glReadPixels` による読み戻しに落とします。1 フレームあたりの往復は増えますが、
+共有経路が無い組み合わせでは `glReadPixels` によるリードバックに落とします。1 フレームあたりの往復は増えますが、
 どこでも動きます。
 
 | プラットフォーム | 経路 | 実機での状態 |
@@ -30,9 +30,9 @@ Godot 4 に組み込み、描画結果を **GPU テクスチャのまま** Godot
 | Windows / D3D12 | ANGLE の D3D11 共有テクスチャ (NT ハンドル) → `ID3D12Resource` | 確認済み |
 | Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | 確認済み |
 | macOS / Metal | IOSurface → `MTLTexture` | 確認済み |
-| Windows / Vulkan | CPU 読み戻し | 確認済み |
-| Linux / Vulkan | CPU 読み戻し | 確認済み |
-| Android / Forward+ · Mobile | CPU 読み戻し | 確認済み |
+| Windows / Vulkan | CPU リードバック | 確認済み |
+| Linux / Vulkan | CPU リードバック | 確認済み |
+| Android / Forward+ · Mobile | CPU リードバック | 確認済み |
 
 実際にどの経路を通ったかは `ServoWebView.get_backend_name()` で分かります。
 
@@ -70,7 +70,7 @@ scripts/build.ps1 | build.sh     ビルドして bin/ へ配置する
 src/                             拡張本体 (Rust)
 ```
 
-リリースの書庫には `addons/godot_servo/` が一式入っています (`bin/` が埋まり、
+リリースのアーカイブには `addons/godot_servo/` が一式入っています (`bin/` が埋まり、
 `godot_servo.gdextension` もその中にあります)。このフォルダを自分のプロジェクトに重ねれば使えます。
 このリポジトリでマニフェストがルートにあるのは、リポジトリのルートがそのままデモの
 プロジェクトだからです。ファイル内の `res://` パスは絶対なので、どちらに置いても同じに解決します。
@@ -87,7 +87,7 @@ scripts/build.ps1 -Release
 ```
 
 `cargo build` だけでは配置まで行いません。ビルドスクリプトを使ってください。
-ライブラリを `addons/godot_servo/bin/` へ複製するほか、mozangle が生成した `libEGL.dll` と
+ライブラリを `addons/godot_servo/bin/` へコピーするほか、mozangle が生成した `libEGL.dll` と
 `libGLESv2.dll` を、ビルド完了後にそのクレートの `OUT_DIR` から拾って配置します。
 surfman は ANGLE を実行時にファイル名で読むので、この 2 つは拡張の DLL と同じ場所に要ります
 (`src/angle_loader.rs` が絶対パスで先読みします)。
@@ -248,7 +248,7 @@ JavaScript を書かず、ただのリンクでも送れます。
 | | |
 | --- | --- |
 | `url`, `view_size`, `autostart`, `enable_webgl2`, `ime_anchor` | エクスポートされたプロパティ |
-| `start()`, `stop()`, `is_running()` | 生存管理 |
+| `start()`, `stop()`, `is_running()` | ライフサイクル |
 | `get_texture()`, `is_texture_flipped_v()`, `needs_external_sampler()`, `get_backend_name()` | 表示 |
 | `load_url()`, `reload()`, `go_back()`, `go_forward()` | ナビゲーション |
 | `evaluate_javascript(code) -> int` | 結果は `script_result(id, value)` で届く |
@@ -324,24 +324,24 @@ Vulkan ドライバは `|| created_from_extension` の除外条件でこの場�
 その除外がありません。
 
 そのため D3D12 経路では、インポートしたテクスチャを `RenderingDevice.texture_copy()` で
-Godot 所有のテクスチャに複製します。コピーは GPU 内で完結するので、CPU の往復は発生しません。
+Godot 所有のテクスチャへコピーします。コピーは GPU 内で完結するので、CPU の往復は発生しません。
 Metal ドライバにはこの制限が無いので、そちらはテクスチャをそのまま渡します。
 
 ### CPU フォールバックが毎フレーム確保しない理由
 
-読み戻し経路はピクセルの置き場と `Image` を 2 組持ち、フレームごとに交互に使います。
-`PackedByteArray` は copy-on-write なので、いま `Image` が参照している側に書くとそこで複製が
+リードバック経路はピクセルの置き場と `Image` を 2 組持ち、フレームごとに交互に使います。
+`PackedByteArray` は copy-on-write なので、いま `Image` が参照している側に書くとそこでコピーが
 走ります。もう一方に書けば参照は 1 つのままで、`glReadPixels` の出力先がそのまま
 テクスチャの中身になります。2 組で足りるのは、レンダリングサーバが別スレッドでも
 積んだ `texture_2d_update` を 1 フレーム以内に消化するためです。
 
 1280×720 の release ビルドで、1 フレームあたりの更新が 1.93 ms から 1.34 ms になり、
-毎フレームの確保 約 7 MB と全画面 1 回分の複製が消えます。
+毎フレームの確保 約 7 MB と全画面 1 回分のコピーが消えます。
 
 ### Linux で jemalloc をビルドし直す理由
 
 Servo は `servo-allocator` を通じて jemalloc を取り込みますが、jemalloc は既定で initial-exec TLS を
-使います。これは共有オブジェクトに `STATIC_TLS` を立て、`PT_TLS` を glibc の静的 TLS 余剰枠の外へ
+使います。これは共有オブジェクトに `STATIC_TLS` を立て、`PT_TLS` を glibc の静的 TLS 予備領域 (static TLS surplus) の外へ
 押し出すので、Godot が `dlopen` できなくなります。そこで `Cargo.toml` では Linux に限って
 `tikv-jemalloc-sys` を直接宣言し、まさにこの事態のために用意されている
 `disable_initial_exec_tls` フィーチャを有効にしています。
@@ -349,7 +349,7 @@ Servo は `servo-allocator` を通じて jemalloc を取り込みますが、jem
 ## 対応していないもの
 
 - **WebGPU。** Servo の実装がこの組み込み方だとクラッシュします。デバイスの作成もコンピュートシェーダも
-  動きますが、canvas へのプレゼント時には必ず、canvas を使わなくても終了時に SIGSEGV で落ちます。
+  動きますが、canvas に表示した時点で必ず、canvas を使わなくても終了時に SIGSEGV で落ちます。
   `webgpu` フィーチャは切ってあります。有効にすると wgpu と naga も抱き込み、ただでさえ大きい
   バイナリがさらに膨らみます。将来の再確認用に `demo/web/webgpu.html` と `webgpu-compute.html` を
   置いてあります。
@@ -369,8 +369,8 @@ Servo を Godot に組み込むアドオンが他に 2 つあります。どち�
 
 | | 描画 | ライセンス |
 | --- | --- | --- |
-| [Decapitated/Godot-Servo](https://github.com/Decapitated/Godot-Servo) | CPU 読み戻し | LGPL-3.0 |
-| [emanuelbertey/web-servo-godot](https://github.com/emanuelbertey/web-servo-godot) | CPU 読み戻し | 記載なし |
+| [Decapitated/Godot-Servo](https://github.com/Decapitated/Godot-Servo) | CPU リードバック | LGPL-3.0 |
+| [emanuelbertey/web-servo-godot](https://github.com/emanuelbertey/web-servo-godot) | CPU リードバック | 記載なし |
 | 本プロジェクト | GPU 共有テクスチャ + CPU フォールバック | MIT / Apache-2.0 |
 
 GPU 経路が要らないなら、現時点では `web-servo-godot` のほうが守備範囲が広めです
