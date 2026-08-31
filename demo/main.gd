@@ -6,6 +6,7 @@ extends Node3D
 ## arrive on ServoWebView's bridge_event signal.
 
 const WebAssets = preload("res://demo/web_assets.gd")
+const SelectPicker = preload("res://demo/select_picker.gd")
 
 ## The panel's physical size, in metres.
 const PANEL_SIZE := Vector2(1.92, 1.08)
@@ -20,6 +21,7 @@ var camera: Camera3D
 var material: StandardMaterial3D
 var external_material: ShaderMaterial
 var hud: RichTextLabel
+var select_picker: PopupMenu
 
 ## The WebView pixel position the pointer last pointed at.
 ## Remembered because key events need a position too.
@@ -31,6 +33,7 @@ func _ready() -> void:
 	_build_environment()
 	_build_panel()
 	_build_hud()
+	_build_picker()
 	_build_browser()
 
 
@@ -159,6 +162,12 @@ func _build_hud() -> void:
 	layer.add_child(hud)
 
 	_set_hud("Starting...")
+
+
+func _build_picker() -> void:
+	select_picker = SelectPicker.new()
+	select_picker.name = "SelectPicker"
+	add_child(select_picker)
 
 
 func _set_hud(text: String) -> void:
@@ -298,7 +307,8 @@ func _on_console_message(level: String, message: String) -> void:
 # alert(), confirm(), prompt() and <select> all block the page's JavaScript until
 # they are answered. A real game would raise its own dialog here and call
 # respond_to_dialog() or respond_to_select() when it closes. The demo shows the
-# content on the HUD and answers immediately.
+# dialogs on the HUD and answers them immediately; <select> gets a real menu,
+# because there is nothing else on screen to pick an option with.
 
 func _on_crashed(reason: String) -> void:
 	_last_event = "page crashed: %s" % reason
@@ -325,16 +335,17 @@ func _on_dialog_prompt(message: String, default_value: String) -> void:
 
 
 ## `options` is an array of `{ id, label, disabled, group }` dictionaries.
-func _on_select_element_requested(options: Array, _allow_multiple: bool) -> void:
-	var labels := PackedStringArray()
-	for option in options:
-		labels.append(option["label"])
-	_last_event = "select: %s -> picking the last one" % ", ".join(labels)
+##
+## Servo draws no dropdown of its own, so the menu is a Godot PopupMenu. It goes
+## where the pointer last was, which is the `<select>` the player just clicked:
+## back through the panel into world space, then onto the screen.
+func _on_select_element_requested(options: Array, allow_multiple: bool) -> void:
+	_last_event = "select: %d options -> picker open" % options.size()
 	_refresh_hud("", "")
-	if options.is_empty():
-		browser.cancel_pending_dialog()
-	else:
-		browser.respond_to_select([options[-1]["id"]])
+	var at := Vector2.ZERO
+	if camera != null:
+		at = camera.unproject_position(_view_pixels_to_world(last_point))
+	select_picker.open(browser, options, allow_multiple, at)
 
 
 # ── IME ───────────────────────────────────────────────────────────────────

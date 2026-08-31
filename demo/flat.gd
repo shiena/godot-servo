@@ -6,13 +6,19 @@ extends Control
 ## gets through.
 
 const WebAssets = preload("res://demo/web_assets.gd")
+const SelectPicker = preload("res://demo/select_picker.gd")
 
 const VIEW_SIZE := Vector2i(1280, 720)
 
 var browser: ServoWebView
 var view: TextureRect
 var status: Label
+var select_picker: PopupMenu
 var texture_bound := false
+
+## Where the pointer last was, in the TextureRect's coordinates. The `<select>`
+## menu opens there.
+var last_point := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -35,6 +41,9 @@ func _ready() -> void:
 	view.mouse_exited.connect(_on_view_exited)
 	root.add_child(view)
 
+	select_picker = SelectPicker.new()
+	add_child(select_picker)
+
 	browser = ServoWebView.new()
 	browser.view_size = VIEW_SIZE
 	browser.url = _local_page_url()
@@ -53,12 +62,10 @@ func _ready() -> void:
 	browser.dialog_prompt.connect(func(message: String, default_value: String) -> void:
 		_note("prompt: %s" % message)
 		browser.respond_to_dialog(true, default_value))
-	browser.select_element_requested.connect(func(options: Array, _multiple: bool) -> void:
+	browser.select_element_requested.connect(func(options: Array, multiple: bool) -> void:
 		_note("select: %d options" % options.size())
-		if options.is_empty():
-			browser.cancel_pending_dialog()
-		else:
-			browser.respond_to_select([options[-1]["id"]]))
+		# Servo hands over the options and waits; the menu is Godot's to draw.
+		select_picker.open(browser, options, multiple, view.global_position + last_point))
 	browser.crashed.connect(func(reason: String) -> void:
 		push_error("godot-servo: page crashed: %s" % reason))
 
@@ -83,6 +90,7 @@ func _on_view_input(event: InputEvent) -> void:
 	else:
 		return
 
+	last_point = local
 	var scale := Vector2(VIEW_SIZE) / view.size
 	browser.feed_input(event, local * scale)
 

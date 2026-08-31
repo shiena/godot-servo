@@ -236,7 +236,10 @@ OS の IME ではなくゲーム側の入力 UI から変換を駆動したい�
 
 `alert()` / `confirm()` / `prompt()` / `<select>` は、埋め込み側が返事をするまで
 ページの JavaScript を止めます。拡張自身は UI を持たないので、それぞれをシグナルで
-渡し、ゲーム側で好きな形に見せて返事をしてもらいます。
+渡し、ゲーム側で好きな形に見せて返事をしてもらいます。`<select>` も同じで、Servo は
+ドロップダウンを描かずに選択肢の一覧を渡してきます。そのためゲーム側でメニューを出すまで、
+`<select>` をクリックしても何も起きていないように見えます。`demo/select_picker.gd` が
+その役をする小さな `PopupMenu` です。
 
 ```gdscript
 browser.dialog_confirm.connect(func(message: String) -> void:

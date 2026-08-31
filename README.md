@@ -242,7 +242,10 @@ offers no way to delete the preedit, so there is nothing to send.
 `alert()`, `confirm()`, `prompt()` and `<select>` all block the page's JavaScript
 until the embedder answers, and the extension has no UI of its own to answer with.
 Each arrives as a signal for the game to present however it likes, and the game
-answers:
+answers. That goes for the `<select>` dropdown too: Servo hands over the option
+list instead of drawing a menu, so clicking a `<select>` looks like nothing
+happened until the game puts one on screen. `demo/select_picker.gd` is a small
+`PopupMenu` that does exactly that.
 
 ```gdscript
 browser.dialog_confirm.connect(func(message: String) -> void:
