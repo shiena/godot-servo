@@ -37,10 +37,12 @@ pub enum ServoEvent {
         name: String,
         payload: String,
     },
-    /// The result of an `evaluate_javascript()` call.
+    /// The outcome of an `evaluate_javascript()` call. Exactly one of these
+    /// follows every call. `error` is empty when the script produced a value.
     ScriptResult {
         id: i64,
         value: Variant,
+        error: String,
     },
     /// An editable element took focus; bring the IME up. The coordinates are
     /// the caret rectangle, in WebView pixels.
@@ -141,8 +143,8 @@ impl ServoEventSink {
         std::mem::take(&mut *self.queue.borrow_mut())
     }
 
-    pub fn push_script_result(&self, id: i64, value: Variant) {
-        self.push(ServoEvent::ScriptResult { id, value });
+    pub fn push_script_result(&self, id: i64, value: Variant, error: String) {
+        self.push(ServoEvent::ScriptResult { id, value, error });
     }
 
     /// Replace the pending request. The previous one is dropped, which sends its

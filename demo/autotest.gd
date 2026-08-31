@@ -12,12 +12,24 @@ extends Node
 const WebAssets = preload("res://demo/web_assets.gd")
 
 const VIEW_SIZE := Vector2i(1280, 720)
-## Deadline for the whole run. A minute is plenty even on a slow CI runner.
+## Deadline for the whole run. A CI runner takes about a minute for the lot, so
+## this leaves room for a step to go slow without letting the run hang.
 const WATCHDOG_SECONDS := 180
+## Deadline for one check against a page that is already up.
+const STEP_SECONDS := 8.0
+## Deadline for the first sign of life. Starting Servo and laying the page out is
+## the slow part: a CI runner without a GPU rasterises on the CPU, where what
+## takes a moment on a desktop took most of a minute.
+const STARTUP_SECONDS := 60.0
+## How long an evaluation may go unanswered before something is badly wrong.
+## Servo answers every call it is handed, in well under a tenth of a second even
+## on a page that has not loaded, so this is not a deadline anything waits out.
+const ANSWER_SECONDS := 5.0
 
 var browser: ServoWebView
 var results: Array[String] = []
 var failures := 0
+var _started_msec := 0
 
 var button_point := Vector2.ZERO
 var scrolled_before := -1.0
@@ -30,6 +42,7 @@ var select_multiple := false
 
 
 func _ready() -> void:
+	_started_msec = Time.get_ticks_msec()
 	browser = ServoWebView.new()
 	browser.view_size = VIEW_SIZE
 	browser.url = _local_page_url()
@@ -64,28 +77,24 @@ func _local_page_url() -> String:
 
 
 func _run() -> void:
-	# 1. Wait for the godot.emit('ready') the page sends on load.
-	await _expect("bridge_event (godot.emit)", "ready", 8.0)
+	# 1. Wait for the godot.emit('ready') the page sends on load. Asking a page
+	#    that has not come up yet answers with an error instead of a value, so
+	#    there is nothing worth checking until this arrives.
+	await _expect("bridge_event (godot.emit)", "ready", STARTUP_SECONDS)
 
 	# 2. JavaScript evaluation and the script_result signal.
 	#    Picks up the first button's centre on the way.
-	browser.evaluate_javascript("""
-		(function() {
-			var r = document.querySelector('button').getBoundingClientRect();
-			return [r.x + r.width / 2, r.y + r.height / 2];
-		})()
-	""")
-	await _wait_for(func() -> bool: return button_point != Vector2.ZERO, 8.0)
+	button_point = await _element_center("button", STARTUP_SECONDS)
 	_check("evaluate_javascript / script_result", button_point != Vector2.ZERO,
 		"button at %s" % button_point)
 
 	# 3. Forward a click and see the page's onclick send back a bridge_event.
 	_click(button_point)
-	await _expect("click -> onclick -> bridge_event", "buy", 8.0)
+	await _expect("click -> onclick -> bridge_event", "buy", STEP_SECONDS)
 
 	# 4. Forward a tap and see onclick fire the same way a click does.
 	_touch_tap(button_point)
-	await _expect("touch tap -> onclick -> bridge_event", "buy", 8.0)
+	await _expect("touch tap -> onclick -> bridge_event", "buy", STEP_SECONDS)
 
 	# 5. Check a finger drag scrolls. It carries momentum, so wait for it to settle.
 	var touch_before := await _scroll_position()
@@ -100,7 +109,7 @@ func _run() -> void:
 	var input_point := await _element_center("#name")
 	print("  -> click input at ", input_point)
 	_click(input_point)
-	var requested := await _wait_for(func() -> bool: return ime_caret != Rect2(), 8.0)
+	var requested := await _wait_for(func() -> bool: return ime_caret != Rect2(), STEP_SECONDS)
 	_check("focus input -> ime_requested", requested, "caret %s" % ime_caret)
 
 	# 7. Push a preedit in and check the committed text lands in the field.
@@ -126,9 +135,12 @@ func _run() -> void:
 		"value '%s'" % committed)
 
 	# 9. alert() should arrive as a signal, and the answer should release the page.
+	#    The three dialog calls are the one place an evaluation is fired and not
+	#    awaited: the page sits inside alert() until respond_to_dialog() lets it
+	#    go, so the answer cannot arrive until further down.
 	dialog_message = ""
 	browser.evaluate_javascript("alert('hello from the page')")
-	var alerted := await _wait_for(func() -> bool: return dialog_message != "", 8.0)
+	var alerted := await _wait_for(func() -> bool: return dialog_message != "", STEP_SECONDS)
 	_check("alert -> dialog_alert", alerted and browser.has_pending_dialog(),
 		"message '%s'" % dialog_message)
 	browser.respond_to_dialog(true, "")
@@ -138,21 +150,21 @@ func _run() -> void:
 	# 10. The answer to confirm() should become the page's value.
 	dialog_message = ""
 	browser.evaluate_javascript("window.__confirmed = confirm('really?')")
-	await _wait_for(func() -> bool: return dialog_message != "", 8.0)
+	await _wait_for(func() -> bool: return dialog_message != "", STEP_SECONDS)
 	browser.respond_to_dialog(true, "")
 	await _sleep(0.5)
-	var confirmed: Variant = await _script_value("window.__confirmed")
+	var confirmed: Variant = await _evaluate("window.__confirmed")
 	_check("confirm -> respond_to_dialog(true)", confirmed == true, "value %s" % confirmed)
 
 	# 11. The text given to prompt() should land in the page.
 	dialog_message = ""
 	browser.evaluate_javascript("window.__prompted = prompt('name?', 'hero')")
-	await _wait_for(func() -> bool: return dialog_message != "", 8.0)
+	await _wait_for(func() -> bool: return dialog_message != "", STEP_SECONDS)
 	_check("prompt -> dialog_prompt", dialog_default == "hero",
 		"default '%s'" % dialog_default)
 	browser.respond_to_dialog(true, "godot")
 	await _sleep(0.5)
-	var prompted: Variant = await _script_value("window.__prompted")
+	var prompted: Variant = await _evaluate("window.__prompted")
 	_check("prompt -> respond_to_dialog(text)", prompted == "godot", "value '%s'" % prompted)
 
 	# 12. The <select> options should arrive and the answer should set the value.
@@ -160,7 +172,7 @@ func _run() -> void:
 	select_options = []
 	var select_point := await _element_center("#job")
 	_click(select_point)
-	var asked := await _wait_for(func() -> bool: return not select_options.is_empty(), 8.0)
+	var asked := await _wait_for(func() -> bool: return not select_options.is_empty(), STEP_SECONDS)
 	_check("select -> select_element_requested", asked and select_options.size() == 4,
 		"%d options, last group '%s'" % [
 			select_options.size(),
@@ -169,7 +181,7 @@ func _run() -> void:
 	if asked:
 		browser.respond_to_select([select_options[-1]["id"]])
 		await _sleep(0.5)
-		var job: Variant = await _script_value("document.querySelector('#job').value")
+		var job: Variant = await _evaluate("document.querySelector('#job').value")
 		_check("respond_to_select sets the value", job == "sage", "value '%s'" % job)
 
 	# 13. Forward the wheel and check the page scrolls.
@@ -256,7 +268,9 @@ func _touch_drag(from: Vector2, to: Vector2, steps: int = 10) -> void:
 func _settle_scroll_to_top() -> void:
 	var deadline := Time.get_ticks_msec() + 8000
 	while Time.get_ticks_msec() < deadline:
-		browser.evaluate_javascript("document.querySelector('main').scrollTop = 0")
+		await _evaluate("document.querySelector('main').scrollTop = 0")
+		# Not for the assignment, which has landed by now, but for whatever
+		# momentum is left to move the page again.
 		await _sleep(0.3)
 		if await _scroll_position() == 0.0:
 			return
@@ -273,8 +287,7 @@ func _send_text(text: String) -> void:
 
 
 func _clear_input(selector: String) -> void:
-	browser.evaluate_javascript("document.querySelector('%s').value = ''" % selector)
-	await _sleep(0.3)
+	await _evaluate("document.querySelector('%s').value = ''" % selector)
 
 
 ## A direction of -1 scrolls downwards.
@@ -289,16 +302,8 @@ func _wheel(point: Vector2, direction: int) -> void:
 # ── Plumbing for the checks ──────────────────────────────────────────────
 
 var _last_event_name := ""
-var _script_values: Dictionary = {}
-var _scroll_id := -1
-var _scroll_value := 0.0
-var _element_id := -1
-var _element_point := Vector2.ZERO
-var _string_id := -1
-var _string_value := ""
-var _any_id := -1
-var _any_value: Variant = null
-var _any_ready := false
+## Outcomes of evaluations, keyed by the id `evaluate_javascript()` returned.
+var _answers: Dictionary = {}
 
 
 func _on_bridge_event(name: String, payload: String) -> void:
@@ -306,19 +311,8 @@ func _on_bridge_event(name: String, payload: String) -> void:
 	print("  <- bridge_event ", name, " ", payload)
 
 
-func _on_script_result(id: int, value: Variant) -> void:
-	_script_values[id] = value
-	if value is Array and value.size() == 2 and button_point == Vector2.ZERO:
-		button_point = Vector2(value[0], value[1])
-	if id == _scroll_id and value is float:
-		_scroll_value = value
-	if id == _element_id and value is Array and value.size() == 2:
-		_element_point = Vector2(value[0], value[1])
-	if id == _string_id and value is String:
-		_string_value = value
-	if id == _any_id:
-		_any_value = value
-		_any_ready = true
+func _on_script_result(id: int, value: Variant, error: String) -> void:
+	_answers[id] = {"value": value, "error": error}
 
 
 func _on_load_finished() -> void:
@@ -355,38 +349,51 @@ func _on_select_element_requested(options: Array, allow_multiple: bool) -> void:
 	print("  <- select_element_requested ", options.size(), " options")
 
 
-## Evaluates an arbitrary expression and returns the result.
-func _script_value(expression: String) -> Variant:
-	_any_id = browser.evaluate_javascript(expression)
-	_any_value = null
-	_any_ready = false
-	await _wait_for(func() -> bool: return _any_ready, 5.0)
-	return _any_value
+## Evaluates an expression and returns what it came to, or null if it never ran.
+##
+## Waits on the answer the call is promised rather than on a value of the shape
+## the caller wanted. The two are not the same: an evaluation that failed and a
+## script that returned null both arrive as null, which is what `error` is for.
+##
+## An error means the page had not settled, so the call goes again until the
+## deadline. `ANSWER_SECONDS` is separate and much shorter: it only catches an
+## answer that never comes, which needs Servo itself to be wedged.
+func _evaluate(script: String, timeout: float = STEP_SECONDS) -> Variant:
+	var deadline := Time.get_ticks_msec() + int(timeout * 1000.0)
+	var trouble := "never attempted"
+	while Time.get_ticks_msec() < deadline:
+		var id: int = browser.evaluate_javascript(script)
+		if not await _wait_for(func() -> bool: return _answers.has(id), ANSWER_SECONDS):
+			push_error("godot-servo self check: evaluation %d was never answered" % id)
+			return null
+		var answer: Dictionary = _answers[id]
+		_answers.erase(id)
+		if answer["error"] == "":
+			return answer["value"]
+		trouble = answer["error"]
+		await _sleep(0.1)
+	push_warning("godot-servo self check: %s" % trouble)
+	return null
 
 
 ## Returns the centre of the element the selector names, in WebView pixels.
-func _element_center(selector: String) -> Vector2:
-	_element_point = Vector2.ZERO
-	_element_id = browser.evaluate_javascript(
+func _element_center(selector: String, timeout: float = STEP_SECONDS) -> Vector2:
+	var value: Variant = await _evaluate(
 		"(function(){var r=document.querySelector('%s').getBoundingClientRect();"
-		% selector + "return [r.x+r.width/2, r.y+r.height/2];})()")
-	await _wait_for(func() -> bool: return _element_point != Vector2.ZERO, 5.0)
-	return _element_point
+		% selector + "return [r.x+r.width/2, r.y+r.height/2];})()", timeout)
+	if value is Array and value.size() == 2:
+		return Vector2(value[0], value[1])
+	return Vector2.ZERO
 
 
 func _input_value(selector: String) -> String:
-	_string_value = ""
-	_string_id = browser.evaluate_javascript(
-		"document.querySelector('%s').value" % selector)
-	await _wait_for(func() -> bool: return _string_value != "", 5.0)
-	return _string_value
+	var value: Variant = await _evaluate("document.querySelector('%s').value" % selector)
+	return value if value is String else ""
 
 
 func _scroll_position() -> float:
-	_scroll_value = -1.0
-	_scroll_id = browser.evaluate_javascript("document.querySelector('main').scrollTop")
-	await _wait_for(func() -> bool: return _scroll_value >= 0.0, 5.0)
-	return _scroll_value
+	var value: Variant = await _evaluate("document.querySelector('main').scrollTop")
+	return value if value is float else -1.0
 
 
 func _expect(label: String, event_name: String, timeout: float) -> void:
@@ -408,11 +415,15 @@ func _sleep(seconds: float) -> void:
 	await get_tree().create_timer(seconds).timeout
 
 
+## Each line carries the second it was reached. CI prints the whole run at once,
+## so this is the only way to tell a check that failed outright from one that
+## merely waited past its deadline.
 func _check(label: String, ok: bool, detail: String) -> void:
+	var at := float(Time.get_ticks_msec() - _started_msec) / 1000.0
 	if ok:
-		results.append("  OK   %s  (%s)" % [label, detail])
+		results.append("  OK   [%5.1fs] %s  (%s)" % [at, label, detail])
 	else:
-		results.append("  FAIL %s  (%s)" % [label, detail])
+		results.append("  FAIL [%5.1fs] %s  (%s)" % [at, label, detail])
 		failures += 1
 
 

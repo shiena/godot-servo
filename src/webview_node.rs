@@ -16,10 +16,10 @@ use godot::global::{Key as GodotKey, MouseButton as GodotMouseButton};
 use godot::prelude::*;
 use servo::{
     Code, CompositionEvent, CompositionState, DevicePoint, ImeEvent, InputEvent as ServoInputEvent,
-    JSValue, Key, KeyState, KeyboardEvent, Location, Modifiers, MouseButton, MouseButtonAction,
-    MouseButtonEvent, MouseMoveEvent, PrefValue, Servo, ServoBuilder, TouchEvent, TouchEventType,
-    TouchId, TouchPointerType, UserContentManager, UserScript, WebView, WebViewBuilder, WheelDelta,
-    WheelEvent, WheelMode,
+    JSValue, JavaScriptEvaluationError, Key, KeyState, KeyboardEvent, Location, Modifiers,
+    MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, PrefValue, Servo,
+    ServoBuilder, TouchEvent, TouchEventType, TouchId, TouchPointerType, UserContentManager,
+    UserScript, WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode,
 };
 
 use crate::bridge::{self, TextureBridge};
@@ -83,6 +83,10 @@ pub struct ServoWebView {
 
     inner: Option<Inner>,
     next_script_id: i64,
+    /// Answers to `evaluate_javascript()` calls made while nothing was running.
+    /// They cannot go on the sink's queue, which lives in `Inner`, so they wait
+    /// here for the next `_process` to emit them alongside it.
+    deferred_results: Vec<(i64, String)>,
 
     /// Whether the IME is up. True only while an editable element has focus.
     ime_active: bool,
@@ -167,9 +171,16 @@ impl ServoWebView {
     #[signal]
     fn bridge_event(name: GString, payload: GString);
 
-    /// The result of `evaluate_javascript()`. `id` matches that call's return value.
+    /// The outcome of `evaluate_javascript()`. `id` matches that call's return
+    /// value, and exactly one of these arrives for every call.
+    ///
+    /// `error` is empty when the script produced a value. Otherwise it says what
+    /// stopped it and `value` is null — which is why the two are separate: a
+    /// script that evaluates to `null` is indistinguishable from one that never
+    /// ran otherwise. A page still loading answers with an error, and the same
+    /// call usually works once it is up.
     #[signal]
-    fn script_result(id: i64, value: Variant);
+    fn script_result(id: i64, value: Variant, error: GString);
 
     /// An editable element in the page took focus and the IME came up.
     ///
@@ -363,22 +374,32 @@ impl ServoWebView {
         }
     }
 
-    /// Evaluate JavaScript. The result comes back on the `script_result` signal.
-    /// The return value is the id to match that result against.
+    /// Evaluate JavaScript. The outcome comes back on the `script_result`
+    /// signal, once per call. The return value is the id to match it against.
     #[func]
     fn evaluate_javascript(&mut self, script: GString) -> i64 {
         let id = self.next_script_id;
         self.next_script_id += 1;
 
-        if let Some(inner) = self.inner.as_ref() {
-            let sink = inner.sink.clone();
-            inner
-                .webview
-                .evaluate_javascript(script.to_string(), move |result| {
-                    let value = result.map(js_value_to_variant).unwrap_or(Variant::nil());
-                    sink.push_script_result(id, value);
-                });
-        }
+        let Some(inner) = self.inner.as_ref() else {
+            // Servo answers every call it is handed, so the one case left that
+            // could strand a caller is a node that is not running. Answer it
+            // here, on the same queue, rather than let the call go quiet.
+            self.deferred_results
+                .push((id, "the WebView is not running".to_owned()));
+            return id;
+        };
+
+        let sink = inner.sink.clone();
+        inner
+            .webview
+            .evaluate_javascript(script.to_string(), move |result| {
+                let (value, error) = match result {
+                    Ok(value) => (js_value_to_variant(value), String::new()),
+                    Err(error) => (Variant::nil(), describe_script_error(&error)),
+                };
+                sink.push_script_result(id, value, error);
+            });
         id
     }
 
@@ -804,6 +825,14 @@ impl ServoWebView {
 
     /// The per-frame work: pump Servo, repaint when needed, emit what queued up.
     fn pump(&mut self) {
+        // Owed to callers whose evaluation never reached Servo. Emitted whether
+        // or not the node is running, since nothing else will deliver them.
+        for (id, error) in std::mem::take(&mut self.deferred_results) {
+            self.signals()
+                .script_result()
+                .emit(id, &Variant::nil(), &GString::from(&error));
+        }
+
         if self.inner.is_none() {
             return;
         }
@@ -876,8 +905,10 @@ impl ServoWebView {
                         .bridge_event()
                         .emit(&GString::from(&name), &GString::from(&payload));
                 }
-                ServoEvent::ScriptResult { id, value } => {
-                    self.signals().script_result().emit(id, &value);
+                ServoEvent::ScriptResult { id, value, error } => {
+                    self.signals()
+                        .script_result()
+                        .emit(id, &value, &GString::from(&error));
                 }
                 ServoEvent::ImeShow {
                     x,
@@ -970,6 +1001,39 @@ fn godot_key_to_servo(event: &Gd<InputEventKey>) -> Option<Key> {
         }
     };
     Some(Key::Named(named))
+}
+
+/// What to put in `script_result`'s `error`.
+///
+/// The wording says whether the same call is worth repeating. `WebViewNotReady`
+/// and the two that follow it come of asking a page that has not settled, and
+/// clear up on their own; the rest are about the script itself and will not.
+fn describe_script_error(error: &JavaScriptEvaluationError) -> String {
+    match error {
+        JavaScriptEvaluationError::WebViewNotReady => {
+            "the page was not ready; it may still be loading".to_owned()
+        }
+        JavaScriptEvaluationError::DocumentNotFound => {
+            "the document the script would have run in is gone".to_owned()
+        }
+        // Servo documents this as a bug of its own, but it is also what comes
+        // back before the page has a pipeline at all, which is where a call made
+        // straight after `start()` lands.
+        JavaScriptEvaluationError::InternalError => {
+            "the page had no pipeline yet; it may not have started loading".to_owned()
+        }
+        JavaScriptEvaluationError::CompilationFailure => "the script did not compile".to_owned(),
+        JavaScriptEvaluationError::EvaluationFailure(info) => match info {
+            Some(info) => format!(
+                "the script threw at {}:{}: {}",
+                info.line_number, info.column, info.message
+            ),
+            None => "the script threw".to_owned(),
+        },
+        JavaScriptEvaluationError::SerializationError(error) => {
+            format!("the result could not be brought across: {error:?}")
+        }
+    }
 }
 
 fn js_value_to_variant(value: JSValue) -> Variant {
