@@ -31,24 +31,61 @@ everywhere.
 | Platform | Path | Runtime status |
 | --- | --- | --- |
 | Windows / D3D12 | ANGLE D3D11 shared texture (NT handle) to `ID3D12Resource` | Verified |
+| Windows / Vulkan | ANGLE D3D11 shared texture (NT handle) to `VkImage` | Verified |
 | Android / Compatibility | `AHardwareBuffer` to `EGLImage` to `ExternalTexture` | Verified |
 | macOS / Metal | IOSurface to `MTLTexture` | Verified |
-| Windows / Vulkan | CPU readback | Verified |
-| Linux / Vulkan | CPU readback | Verified |
-| Android / Forward+ or Mobile | CPU readback | Verified |
+| Linux / Vulkan | `VkImage` to opaque fd to `GL_EXT_memory_object` | Untested on hardware |
+| Android / Forward+ or Mobile | `VkImage` to opaque fd to `GL_EXT_memory_object` | Untested on hardware |
+| macOS / Vulkan (MoltenVK) | IOSurface to `VkImage` | Untested on hardware |
 
 Call `ServoWebView.get_backend_name()` to see which path a running instance took.
 
-Two renderer settings decide whether the GPU path is available:
+### Windows and macOS need a project setting for it
 
-- **Windows** defaults to Vulkan. Set `rendering/rendering_device/driver.windows` to `d3d12` for the
-  shared-texture path. Vulkan could work too, but it needs
-  [godotengine/godot#114940](https://github.com/godotengine/godot/pull/114940), which lets a project
-  enable `VK_KHR_external_memory_win32`.
-- **Android** needs the Compatibility renderer, set through
-  `rendering/renderer/rendering_method.mobile`. In the RenderingDevice backends,
-  `texture_external_initialize()` is a stub, so Forward+ and Mobile have nothing to receive an
-  external texture with.
+A Vulkan device's extensions are fixed when the device is created, long before a GDExtension is
+loaded. Where sharing needs one Godot does not ask for, only the project can ask, and that takes
+[godotengine/godot#114940](https://github.com/godotengine/godot/pull/114940): it adds the
+`rendering/rendering_device/vulkan/additional_device_extensions` project setting, and a
+`RenderingDevice.get_device_enabled_extensions()` to read back what the device actually took.
+
+```ini
+[rendering]
+
+rendering_device/vulkan/additional_device_extensions=PackedStringArray("VK_KHR_external_memory_win32", "VK_EXT_metal_objects")
+```
+
+| Platform | Device extension | In a stock Godot |
+| --- | --- | --- |
+| Windows | `VK_KHR_external_memory_win32` | Not enabled; needs the setting |
+| macOS (MoltenVK) | `VK_EXT_metal_objects` | Not enabled; needs the setting |
+| Linux, Android | `VK_KHR_external_memory_fd` | **Already enabled** |
+
+Linux and Android come out on the right side of that table by choice of mechanism. An opaque fd is
+the one external-memory handle Godot enables the extension for unprompted — it registers
+`VK_KHR_external_memory_fd` for an unrelated reason, to keep some platforms' runtime components
+from filling the validation layers with noise — so those two share GPU memory on a Godot with no
+patches and no settings. The dma-buf and `AHardwareBuffer` routes would each have needed an
+extension Godot never registers.
+
+Only the paths that need the setting probe for the method, at startup. Where it is missing the
+Vulkan renderer falls back to CPU readback with a line in the log saying why, and nothing fails to
+start. Where it is there, the enabled extensions decide. Beyond that every path checks the device
+itself: an extension can be listed and its entry points still not resolve, and a name on a list is
+a claim where a resolved function is a fact.
+
+### Renderer settings
+
+- **Windows** defaults to Vulkan, which now has a shared-texture path of its own. Setting
+  `rendering/rendering_device/driver.windows` to `d3d12` is still the option that needs nothing from
+  Godot beyond 4.4; this project keeps it for that reason.
+- **Android** works on all three renderers, by two different routes. Compatibility (GLES3) shares an
+  `AHardwareBuffer` and receives it as an `ExternalTexture`, which needs `samplerExternalOES` in the
+  shader — see `needs_external_sampler()`. Forward+ and Mobile share a `VkImage` through an fd
+  instead, and it arrives as a plain `sampler2D` texture. `texture_external_initialize()` in the
+  `RenderingDevice` backends is a stub, which is why the `ExternalTexture` route is the
+  Compatibility one only.
+- **macOS** defaults to Metal, and that path needs no project setting. The Vulkan one is there for
+  projects running on MoltenVK.
 
 ## Requirements
 
@@ -348,28 +385,52 @@ and `sync()` are for local devices only. Ordering therefore relies on `glFlush()
 wgpu library, `wgpu-native-texture-interop`, is in the same position: explicit semaphores are "not
 yet handled by any built-in synchronizer".
 
+This is a real gap rather than a theoretical one. A sibling project doing the same kind of sharing
+under Android XR measured tearing under fast head motion with no GPU-to-GPU sync, and had to submit
+its own command buffer with an exportable `SYNC_FD` semaphore to close it. Nothing here resamples
+the way an XR compositor does, and no tearing has been seen, but the same escalation is available
+if it ever is: `VK_KHR_external_semaphore_fd` can be requested through the same
+`additional_device_extensions` setting the import already uses.
+
 ### Lending the GL context
 
 Servo keeps its own GL context and makes it current to draw. Where Godot renders with Vulkan, D3D12,
 or Metal, nothing else on the thread wants a GL context. Android's Compatibility renderer is the
 exception: Godot draws from its own EGL context on the same thread, so `src/gl_guard.rs` captures
-whatever is current before Servo is given the thread and restores it afterwards.
+whatever is current before Servo is given the thread and restores it afterwards. The Linux and
+Android Vulkan paths do issue GL calls of their own, to build and later free the texture over the
+shared allocation, but always on Servo's context, which they make current first.
 
 The same rule applies to anything on Godot's side that issues GL calls. `ExternalTexture` calls
 `glEGLImageTargetTexture2DOES` when its buffer id is set, so the Android bridge restores the host
 context before creating it.
 
-### Why the D3D12 path copies once
+### Why the RenderingDevice paths copy once
 
-Godot's D3D12 driver accepts only textures that own an allocation in
-`_texture_create_shared_from_slice()`, and rejects imported ones. `Texture2DRD` calls
-`texture_create_shared()` internally, so passing the imported texture straight to it renders white.
-The Vulkan driver allows this case through a `|| created_from_extension` exemption; D3D12 has no
-such exemption.
+`Texture2DRD` calls `texture_create_shared()` internally, and neither `RenderingDevice` driver
+displays the result for a texture created from an extension. The D3D12 driver rejects it outright:
+`_texture_create_shared_from_slice()` accepts only textures that own an allocation, so passing the
+imported one straight in renders white. The Vulkan driver has a `|| created_from_extension`
+exemption and accepts it — and then samples black, on Godot 4.7 with an NVIDIA driver, whether or
+not the image has been through a layout transition first.
 
-The D3D12 path therefore copies the imported texture into a Godot-owned one with
-`RenderingDevice.texture_copy()`. The copy stays on the GPU, so no CPU round trip appears. The Metal
-driver has no such restriction, so that path hands the texture over directly.
+What is behind the black is that `texture_create_from_extension()` builds a view and a tracker
+entry over the foreign image; it never takes ownership of the image or its memory, and there is no
+queue-family ownership transfer. Godot's layout tracker therefore has no true reading of what state
+the foreign image is in, and a direct sample is a read against a layout Godot never established.
+A copy is a Godot-tracked operation on both ends, so it transitions and reads consistently within
+that bookkeeping.
+
+Both paths therefore copy the imported texture into a Godot-owned one with
+`RenderingDevice.texture_copy()` and display that. The copy stays on the GPU, so no CPU round trip
+appears. Metal is the exception: `Texture2DRD` is not involved on that path at all, and the texture
+goes over directly.
+
+One caveat comes with the copy: the main `RenderingDevice` records it into Godot's frame command
+buffer rather than executing it, so it lands some time after the call. Nothing here needs to
+observe its completion — the destination is sampled by Godot's own rendering, which the same frame
+graph orders — but it does mean the ordering against Servo's writes still rests on the `glFlush()`
+described under Synchronization, one step further away than the call site suggests.
 
 ### The CPU fallback allocates nothing per frame
 
@@ -399,9 +460,6 @@ cannot `dlopen` it. `Cargo.toml` therefore declares `tikv-jemalloc-sys` directly
   `CompositorEffect` covers the Godot side, but the Servo side needs a fork that adds a
   `WebRenderImageHandlerType`.
 - **iOS.** Neither surfman nor Servo targets it, and iOS forbids JIT and `dlopen`.
-- **A GPU sharing path for Linux**, which would need
-  [godotengine/godot#114940](https://github.com/godotengine/godot/pull/114940) for
-  `VK_EXT_external_memory_dma_buf`.
 - **The file picker, colour picker, and context menu.** Servo offers all three, but
   none is surfaced as a signal yet; they answer with the default, choosing nothing.
 - **Multiple `ServoWebView` nodes.** They share one `Servo` instance by design, but that is untested.

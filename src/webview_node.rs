@@ -293,7 +293,7 @@ impl ServoWebView {
             self.set_ime_enabled(false);
         }
         if let Some(mut inner) = self.inner.take() {
-            inner.bridge.release();
+            inner.bridge.release(&inner.context);
             drop(inner.webview);
             drop(inner.servo);
             servo_instance::release();
@@ -417,7 +417,7 @@ impl ServoWebView {
         }
         inner.webview.resize(size);
         // The surface changed, so rebuild the texture bridge too.
-        inner.bridge.release();
+        inner.bridge.release(&inner.context);
         inner.bridge = bridge::create(&inner.context, size, &HostContext::capture());
     }
 

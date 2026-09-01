@@ -7,9 +7,18 @@
 //! | Backend | Path |
 //! |---|---|
 //! | Windows / D3D12 | ANGLE D3D11 shared texture (NT handle) to `ID3D12Resource` |
+//! | Windows / Vulkan | ANGLE D3D11 shared texture (NT handle) to `VkImage` |
 //! | macOS / Metal | IOSurface to `MTLTexture` |
+//! | macOS / Vulkan | IOSurface to `VkImage`, through MoltenVK |
 //! | Android / Compatibility | `AHardwareBuffer` to `EGLImage` to `ExternalTexture` |
+//! | Android / Forward+, Mobile | `VkImage` to opaque fd to a GL memory object |
+//! | Linux / Vulkan | `VkImage` to opaque fd to a GL memory object |
 //! | anything else | `glReadPixels` to `ImageTexture` |
+//!
+//! The Windows and macOS Vulkan paths need a device extension that only a
+//! project can enable, so they check for that first and fall back to the
+//! readback where it is absent; Linux and Android need nothing Godot does not
+//! already enable. [`bridge::vulkan::caps`] has the detail.
 
 use godot::prelude::*;
 

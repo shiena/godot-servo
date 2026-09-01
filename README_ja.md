@@ -28,23 +28,60 @@ Godot 4 に組み込み、描画結果を **GPU テクスチャのまま** Godot
 | プラットフォーム | 経路 | 実機での状態 |
 | --- | --- | --- |
 | Windows / D3D12 | ANGLE の D3D11 共有テクスチャ (NT ハンドル) → `ID3D12Resource` | 確認済み |
+| Windows / Vulkan | ANGLE の D3D11 共有テクスチャ (NT ハンドル) → `VkImage` | 確認済み |
 | Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | 確認済み |
 | macOS / Metal | IOSurface → `MTLTexture` | 確認済み |
-| Windows / Vulkan | CPU リードバック | 確認済み |
-| Linux / Vulkan | CPU リードバック | 確認済み |
-| Android / Forward+ · Mobile | CPU リードバック | 確認済み |
+| Linux / Vulkan | `VkImage` → opaque fd → `GL_EXT_memory_object` | 実機未確認 |
+| Android / Forward+ · Mobile | `VkImage` → opaque fd → `GL_EXT_memory_object` | 実機未確認 |
+| macOS / Vulkan (MoltenVK) | IOSurface → `VkImage` | 実機未確認 |
 
 実際にどの経路を通ったかは `ServoWebView.get_backend_name()` で分かります。
 
-GPU 共有が使えるかどうかは、レンダラの設定 2 つで決まります。
+### プロジェクト設定が要るのは Windows と macOS
 
-- **Windows** の既定は Vulkan です。共有テクスチャの経路を使うには
-  `rendering/rendering_device/driver.windows` を `d3d12` にしてください。Vulkan でも実現はできますが、
-  プロジェクトから `VK_KHR_external_memory_win32` を有効にするための
-  [godotengine/godot#114940](https://github.com/godotengine/godot/pull/114940) が要ります。
-- **Android** は Compatibility レンダラ (`rendering/renderer/rendering_method.mobile`) が必要です。
-  RenderingDevice 側のバックエンドでは `texture_external_initialize()` が空実装なので、
-  Forward+ と Mobile には外部テクスチャの受け口がありません。
+Vulkan のデバイス拡張はデバイス生成時に決まります。GDExtension が読み込まれるよりずっと前です。
+Godot が要求しない拡張が共有に必要なら、要求できるのはプロジェクトだけで、それには
+[godotengine/godot#114940](https://github.com/godotengine/godot/pull/114940) が要ります。この PR は
+`rendering/rendering_device/vulkan/additional_device_extensions` というプロジェクト設定と、
+実際に有効になった拡張を読み出す `RenderingDevice.get_device_enabled_extensions()` を追加します。
+
+```ini
+[rendering]
+
+rendering_device/vulkan/additional_device_extensions=PackedStringArray("VK_KHR_external_memory_win32", "VK_EXT_metal_objects")
+```
+
+| プラットフォーム | デバイス拡張 | 素の Godot では |
+| --- | --- | --- |
+| Windows | `VK_KHR_external_memory_win32` | 無効。設定が要る |
+| macOS (MoltenVK) | `VK_EXT_metal_objects` | 無効。設定が要る |
+| Linux・Android | `VK_KHR_external_memory_fd` | **既定で有効** |
+
+Linux と Android がこの表の良い側にいるのは、共有の仕組みを選んだ結果です。opaque fd は、Godot が
+何も言われずに拡張を有効化してくれる唯一の外部メモリハンドルです。Godot は
+`VK_KHR_external_memory_fd` をこれとは無関係の理由で登録しています。一部プラットフォームの
+ランタイムが検証レイヤーを騒がせるのを抑えるためです。おかげでこの 2 つは、パッチも設定も無い
+Godot で GPU メモリを共有できます。dma-buf や `AHardwareBuffer` の経路なら、どちらも Godot が
+決して登録しない拡張を要求することになっていました。
+
+設定が要る経路だけが、起動時にメソッドの有無を調べます。無ければ Vulkan レンダラは CPU
+リードバックに落ち、理由をログに出します。起動には失敗しません。あれば、有効になっている拡張を
+見て決めます。そのうえでどの経路もデバイス自身に確認します。拡張が一覧に載っていてもエントリ
+ポイントが解決しないことはあり、一覧上の名前は主張に過ぎず、解決した関数だけが事実だからです。
+
+### レンダラの設定
+
+- **Windows** の既定は Vulkan で、そちらにも共有テクスチャの経路ができました。
+  `rendering/rendering_device/driver.windows` を `d3d12` にする手もまだ有効で、こちらは Godot に
+  4.4 以上であること以外を求めません。このプロジェクトがその値を残しているのはそのためです。
+- **Android** は 3 つのレンダラすべてで動きますが、経路は 2 種類です。Compatibility (GLES3) は
+  `AHardwareBuffer` を共有し、`ExternalTexture` として受け取るので、シェーダに
+  `samplerExternalOES` が要ります (`needs_external_sampler()` 参照)。Forward+ と Mobile は代わりに
+  `VkImage` を fd 経由で共有し、ふつうの `sampler2D` テクスチャとして届きます。`ExternalTexture`
+  の経路が Compatibility 限定なのは、RenderingDevice 側のバックエンドで
+  `texture_external_initialize()` が空実装だからです。
+- **macOS** の既定は Metal で、そちらはプロジェクト設定を必要としません。Vulkan の経路は
+  MoltenVK で動かしている場合のためのものです。
 
 ## 必要なもの
 
@@ -342,29 +379,52 @@ Godot の `RenderingDevice` には、外部セマフォをサブミットに結�
 wgpu 側の同種のライブラリ `wgpu-native-texture-interop` も同じ状況で、明示的なセマフォは
 「まだどの組み込みシンクロナイザも扱っていない」と書かれています。
 
+これは理屈上の穴ではなく実在します。Android XR で同種の共有をしている姉妹プロジェクトでは、
+GPU 間同期なしだと頭を速く振ったときにティアリングが出て、自前のコマンドバッファに
+エクスポート可能な `SYNC_FD` セマフォを付けて解決しています。こちらには XR コンポジタのような
+再サンプリングは無く、ティアリングも観測していませんが、必要になれば同じ手が使えます。
+`VK_KHR_external_semaphore_fd` は、インポートで既に使っている `additional_device_extensions`
+から同じように要求できます。
+
 ### GL コンテキストの貸し借り
 
 Servo は自前の GL コンテキストを持ち、描画のたびにそれをカレントにします。Godot が Vulkan /
 D3D12 / Metal で描いている環境では、そのスレッドの GL コンテキストを他に使う者がいません。
 Android の Compatibility レンダラだけは事情が違い、Godot 自身が同じスレッドの EGL コンテキストで
 描画しています。そこで `src/gl_guard.rs` が、Servo にスレッドを渡す前にカレントなものを控え、
-あとで戻します。
+あとで戻します。Linux と Android の Vulkan 経路も GL を呼びます。共有アロケーションの上に
+テクスチャを作るときと、あとで解放するときです。ただし必ず Servo のコンテキストをカレントに
+してから呼びます。
 
 同じ規則が Godot 側で GL を呼ぶものすべてに当てはまります。`ExternalTexture` はバッファ ID を
 設定した時点で `glEGLImageTargetTexture2DOES` を呼ぶので、Android のブリッジは
 それを作る前にホストのコンテキストへ戻します。
 
-### D3D12 経路が 1 回コピーする理由
+### RenderingDevice 経路が 1 回コピーする理由
 
-Godot の D3D12 ドライバは `_texture_create_shared_from_slice()` で、自前のアロケーションを持つ
-テクスチャしか受け付けず、インポートしたものを弾きます。`Texture2DRD` は内部で
-`texture_create_shared()` を呼ぶため、インポートしたテクスチャをそのまま渡すと真っ白になります。
-Vulkan ドライバは `|| created_from_extension` の除外条件でこの場合を通しますが、D3D12 には
-その除外がありません。
+`Texture2DRD` は内部で `texture_create_shared()` を呼びますが、`RenderingDevice` のドライバは
+どちらも、拡張から作ったテクスチャをそのままでは表示しません。D3D12 ドライバは明確に弾きます。
+`_texture_create_shared_from_slice()` が自前のアロケーションを持つテクスチャしか受け付けないので、
+インポートしたものを渡すと真っ白になります。Vulkan ドライバには `|| created_from_extension` の
+除外条件があり、受け付けはします。そのうえで真っ黒にサンプリングされます。Godot 4.7 と NVIDIA
+ドライバの組み合わせで、レイアウト遷移を挟んでも変わりませんでした。
 
-そのため D3D12 経路では、インポートしたテクスチャを `RenderingDevice.texture_copy()` で
-Godot 所有のテクスチャへコピーします。コピーは GPU 内で完結するので、CPU の往復は発生しません。
-Metal ドライバにはこの制限が無いので、そちらはテクスチャをそのまま渡します。
+真っ黒の中身はこうです。`texture_create_from_extension()` は外部イメージに対してビューと
+トラッカのエントリを作るだけで、イメージもメモリも所有せず、キューファミリの所有権移動も
+ありません。したがって Godot のレイアウトトラッカは、その外部イメージが実際にどの状態にあるかを
+知りません。直接サンプリングするのは、Godot が一度も確立していないレイアウトに対する読み出しです。
+コピーなら両端とも Godot が追跡している操作なので、その帳簿の中で整合して遷移し、読み出せます。
+
+そのため両方の経路とも、インポートしたテクスチャを `RenderingDevice.texture_copy()` で
+Godot 所有のテクスチャへコピーし、そちらを表示します。コピーは GPU 内で完結するので、CPU の
+往復は発生しません。Metal だけは例外で、そもそも `Texture2DRD` を経由せず、テクスチャを
+そのまま渡します。
+
+コピーには 1 つ注意があります。メイン `RenderingDevice` はコピーを即座に実行せず、Godot の
+フレームコマンドバッファに記録します。つまり呼び出しより後に実行されます。ここでは完了を
+観測する必要がありません。コピー先を読むのは Godot 自身の描画で、同じフレームグラフが順序を
+付けるからです。ただし Servo 側の書き込みとの順序は、依然として「同期」の節にある `glFlush()`
+頼みで、呼び出し位置から見えるより 1 段遠いところで効いています。
 
 ### CPU フォールバックが毎フレーム確保しない理由
 
@@ -396,8 +456,6 @@ Servo は `servo-allocator` を通じて jemalloc を取り込みますが、jem
   Godot 側は `CompositorEffect` で足りますが、Servo 側は `WebRenderImageHandlerType` を足した
   フォークが要ります。
 - **iOS。** surfman も Servo も対象にしておらず、iOS は JIT と `dlopen` を禁じています。
-- **Linux の GPU 共有経路。** `VK_EXT_external_memory_dma_buf` のために
-  [godotengine/godot#114940](https://github.com/godotengine/godot/pull/114940) が要ります。
 - **ファイル選択・色選択・コンテキストメニュー。** Servo は 3 つとも用意していますが、
   まだシグナルにしていません。既定の返事 (何も選ばない) を返します。
 - **`ServoWebView` を複数置くこと。** 設計上は `Servo` 本体を 1 つ共有しますが、未検証です。

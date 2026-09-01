@@ -25,7 +25,7 @@ window/size/viewport_height=720
 
 [rendering]
 
-; The AHardwareBuffer sharing path on Android only works on the Compatibility renderer.
+rendering_device/vulkan/additional_device_extensions=PackedStringArray("VK_KHR_external_memory_win32", "VK_EXT_metal_objects")
+rendering_device/driver.windows="d3d12"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
-rendering_device/driver.windows="d3d12"

@@ -99,7 +99,7 @@ impl TextureBridge for MetalBridge {
         true
     }
 
-    fn release(&mut self) {
+    fn release(&mut self, _context: &GodotRenderingContext) {
         if self.rd_texture.is_valid() {
             self.texture.set_texture_rd_rid(Rid::Invalid);
             if let Some(mut rendering_device) = RenderingServer::singleton().get_rendering_device()

@@ -14,6 +14,10 @@ godot = { version = "0.5.5", features = ["api-4-4"] }
 # See the "Not supported" section of the README.
 servo = "0.5.0"
 surfman = { version = "0.13.0", features = ["chains"] }
+# Only ever used against the device Godot already created. `Entry::load()` opens
+# the platform's Vulkan loader, which every target here has one of: the ICD
+# loader on Windows and Linux, libvulkan on Android, MoltenVK on macOS.
+ash = "0.38"
 glow = "0.17"
 gleam = "0.15"
 euclid = "0.22"

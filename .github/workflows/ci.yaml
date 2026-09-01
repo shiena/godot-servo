@@ -109,8 +109,9 @@ jobs:
           path: addons/godot_servo/bin/
           if-no-files-found: error
 
-  # GPU sharing through AHardwareBuffer only works on the Compatibility renderer;
-  # Forward+ and Mobile fall back to CPU readback.
+  # All three renderers share GPU memory, by two routes: an AHardwareBuffer as an
+  # ExternalTexture under Compatibility, and a VkImage shared through an fd under
+  # Forward+ and Mobile.
   # Only arm64-v8a is built. x86_64 Android survives on emulators and ChromeOS and
   # little else, and neither the export preset nor the release covers it.
   android:
