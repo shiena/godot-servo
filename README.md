@@ -1,6 +1,12 @@
-# godot-servo
+<p align="center">
+  <img src="addons/godot_servo/icon.svg" alt="godot-servo logo" width="128" height="128">
+</p>
 
-English | [日本語](README_ja.md)
+<h1 align="center">godot-servo</h1>
+
+<p align="center">
+  English | <a href="README_ja.md">日本語</a>
+</p>
 
 `godot-servo` embeds [Servo](https://servo.org/), the Rust browser engine, into Godot 4 as a
 GDExtension and hands the rendered page to Godot **as a GPU texture**.

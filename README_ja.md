@@ -1,6 +1,12 @@
-# godot-servo
+<p align="center">
+  <img src="addons/godot_servo/icon.svg" alt="godot-servo ロゴ" width="128" height="128">
+</p>
 
-[English](README.md) | 日本語
+<h1 align="center">godot-servo</h1>
+
+<p align="center">
+  <a href="README.md">English</a> | 日本語
+</p>
 
 `godot-servo` は Rust 製のブラウザエンジン [Servo](https://servo.org/) を GDExtension として
 Godot 4 に組み込み、描画結果を **GPU テクスチャのまま** Godot に渡すアドオンです。
