@@ -2261,6 +2261,7 @@ dependencies = [
  "glow",
  "godot",
  "image",
+ "libc",
  "log",
  "objc2",
  "objc2-foundation",

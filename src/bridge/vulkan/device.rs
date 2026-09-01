@@ -2,9 +2,22 @@
 //!
 //! Godot already created the instance, the physical device and the logical
 //! device; `get_driver_resource()` hands out the raw handles. Loading the entry
-//! points is all that is left. `Entry::load()` opens the system Vulkan loader a
-//! second time, which is a reference count on the one Godot is already using,
-//! and `vkGetInstanceProcAddr` from it resolves against any instance.
+//! points is all that is left.
+//!
+//! On Windows, Linux and Android, `Entry::load()` opens the system Vulkan
+//! loader a second time, which is a reference count on the one Godot already
+//! resolved its handles through, and `vkGetInstanceProcAddr` from it resolves
+//! against any instance that loader knows about.
+//!
+//! macOS is not like the others: a stock Godot build links MoltenVK statically
+//! (`use_volk=False` is the default) rather than through a Vulkan loader, so
+//! there is no second loader to open — `Entry::load()`'s `dlopen("libvulkan.dylib")`
+//! either fails outright, or, if something else on the system happens to
+//! install a real loader (the Vulkan SDK, say), succeeds but resolves
+//! `vkGetInstanceProcAddr` from a loader that never saw Godot's `VkInstance`.
+//! Handing that instance to it aborts the process. macOS instead pulls
+//! `vkGetInstanceProcAddr` straight out of the running process with `dlsym`,
+//! which finds the same statically-linked MoltenVK Godot itself is using.
 
 use std::ffi::CStr;
 
@@ -31,10 +44,10 @@ impl VulkanDevice {
         let device_handle = godot_logical_device()?;
 
         // SAFETY: the handles come straight from Godot's own live device, and
-        // the loader is the same one Godot resolved them through.
+        // `load_entry()` resolves `vkGetInstanceProcAddr` from whatever Vulkan
+        // implementation Godot itself is using, on every platform.
         unsafe {
-            let entry = ash::Entry::load()
-                .map_err(|error| format!("could not load the Vulkan loader: {error}"))?;
+            let entry = load_entry()?;
             let instance =
                 ash::Instance::load(entry.static_fn(), vk::Instance::from_raw(instance_handle));
             let device = ash::Device::load(instance.fp_v1_0(), vk::Device::from_raw(device_handle));
@@ -121,4 +134,34 @@ impl VulkanDevice {
         // SAFETY: nothing else holds the queues, per the comment above.
         let _ = unsafe { self.device.device_wait_idle() };
     }
+}
+
+/// Resolve `vkGetInstanceProcAddr` from whatever Vulkan implementation Godot
+/// itself is already using. See the module doc for why this differs on macOS.
+///
+/// # Safety
+///
+/// The caller must not use the returned `Entry`, or anything loaded through
+/// it, after this process's Vulkan implementation is gone — which for a
+/// GDExtension means never, since it does not control that lifetime.
+#[cfg(not(target_os = "macos"))]
+unsafe fn load_entry() -> Result<ash::Entry, String> {
+    ash::Entry::load().map_err(|error| format!("could not load the Vulkan loader: {error}"))
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn load_entry() -> Result<ash::Entry, String> {
+    let name = c"vkGetInstanceProcAddr";
+    // SAFETY: `name` is a valid, nul-terminated C string for the call's lifetime.
+    let symbol = unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr()) };
+    if symbol.is_null() {
+        return Err("vkGetInstanceProcAddr is not linked into this process".into());
+    }
+    // SAFETY: a non-null `dlsym` result for this name is a `PFN_vkGetInstanceProcAddr`.
+    let get_instance_proc_addr: vk::PFN_vkGetInstanceProcAddr =
+        unsafe { std::mem::transmute(symbol) };
+    // SAFETY: the pointer above came straight from the process's own symbol
+    // table, so it complies with Vulkan 1.0 semantics for as long as the
+    // process runs.
+    Ok(unsafe { ash::Entry::from_static_fn(ash::StaticFn { get_instance_proc_addr }) })
 }
