@@ -163,5 +163,9 @@ unsafe fn load_entry() -> Result<ash::Entry, String> {
     // SAFETY: the pointer above came straight from the process's own symbol
     // table, so it complies with Vulkan 1.0 semantics for as long as the
     // process runs.
-    Ok(unsafe { ash::Entry::from_static_fn(ash::StaticFn { get_instance_proc_addr }) })
+    Ok(unsafe {
+        ash::Entry::from_static_fn(ash::StaticFn {
+            get_instance_proc_addr,
+        })
+    })
 }
