@@ -35,7 +35,7 @@ everywhere.
 | Android / Compatibility | `AHardwareBuffer` to `EGLImage` to `ExternalTexture` | Verified |
 | macOS / Metal | IOSurface to `MTLTexture` | Verified |
 | Linux / Vulkan | `VkImage` to opaque fd to `GL_EXT_memory_object` | Untested on hardware |
-| Android / Forward+ or Mobile | `VkImage` to opaque fd to `GL_EXT_memory_object` | Untested on hardware |
+| Android / Forward+ or Mobile | `VkImage` to opaque fd to `GL_EXT_memory_object` | Verified |
 | macOS / Vulkan (MoltenVK) | IOSurface to `VkImage` | Untested on hardware |
 
 Call `ServoWebView.get_backend_name()` to see which path a running instance took.

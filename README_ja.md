@@ -32,7 +32,7 @@ Godot 4 に組み込み、描画結果を **GPU テクスチャのまま** Godot
 | Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | 確認済み |
 | macOS / Metal | IOSurface → `MTLTexture` | 確認済み |
 | Linux / Vulkan | `VkImage` → opaque fd → `GL_EXT_memory_object` | 実機未確認 |
-| Android / Forward+ · Mobile | `VkImage` → opaque fd → `GL_EXT_memory_object` | 実機未確認 |
+| Android / Forward+ · Mobile | `VkImage` → opaque fd → `GL_EXT_memory_object` | 確認済み |
 | macOS / Vulkan (MoltenVK) | IOSurface → `VkImage` | 実機未確認 |
 
 実際にどの経路を通ったかは `ServoWebView.get_backend_name()` で分かります。
