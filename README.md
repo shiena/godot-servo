@@ -34,9 +34,9 @@ everywhere.
 | Windows / Vulkan | ANGLE D3D11 shared texture (NT handle) to `VkImage` | Verified |
 | Android / Compatibility | `AHardwareBuffer` to `EGLImage` to `ExternalTexture` | Verified |
 | macOS / Metal | IOSurface to `MTLTexture` | Verified |
-| Linux / Vulkan | `VkImage` to opaque fd to `GL_EXT_memory_object` | Untested on hardware |
+| Linux / Vulkan | `VkImage` to opaque fd to `GL_EXT_memory_object` | Verified on llvmpipe |
 | Android / Forward+ or Mobile | `VkImage` to opaque fd to `GL_EXT_memory_object` | Verified |
-| macOS / Vulkan (MoltenVK) | IOSurface to `VkImage` | Untested on hardware |
+| macOS / Vulkan (MoltenVK) | IOSurface to `VkImage` | Verified |
 
 Call `ServoWebView.get_backend_name()` to see which path a running instance took.
 
