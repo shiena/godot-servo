@@ -153,18 +153,21 @@ jobs:
         with:
           path: staged
 
-      # The archive is shaped so that dropping it into a project just works. It
-      # holds one thing, addons/godot_servo/, so merging addons/ installs it.
+      # The archive holds one thing, addons/godot_servo/, and the zip starts at
+      # addons/ so there is no wrapper directory to strip. The Asset Store asks
+      # for that structure so an install cannot land files beside the project's
+      # own, and it asks for the licence to travel with the asset — which is why
+      # both texts go inside the addon folder rather than staying at the root.
       - name: Assemble the addon package
         run: |
           NAME="godot-servo-${{ needs.prepare.outputs.version }}"
           mkdir -p "$NAME/addons/godot_servo"
-          cp addons/godot_servo/README.md "$NAME/addons/godot_servo/"
+          cp addons/godot_servo/README.md addons/godot_servo/icon.svg \
+            LICENSE-APACHE LICENSE-MIT "$NAME/addons/godot_servo/"
           # The .gdextension goes inside the addon. Its res:// paths are absolute,
           # so the file itself can sit anywhere. A second copy at the root would
           # register the same extension twice, so keep exactly one.
           cp godot_servo.gdextension godot_servo.gdextension.uid "$NAME/addons/godot_servo/"
-          cp README.md README_ja.md LICENSE* "$NAME/" 2>/dev/null || true
           # Every platform the manifest names has to be here. A missing one used to
           # be skipped silently, which shipped a Windows-only archive whose
           # .gdextension still pointed at libraries for the others.
@@ -176,16 +179,18 @@ jobs:
             cp -r "$src/." "$NAME/addons/godot_servo/bin/$platform/"
           done
           find "$NAME/addons/godot_servo/bin" -type f | sort
-          zip -r "$NAME.zip" "$NAME"
+          ( cd "$NAME" && zip -r "../$NAME.zip" addons )
           echo "ARCHIVE=$NAME.zip" >> "$GITHUB_ENV"
 
       # A demo that runs as it is: the addon plus the demo scenes and pages.
+      # This one is a whole project rather than something to merge, so it keeps
+      # the wrapper directory and carries the repository's own docs at its root.
       - name: Assemble the demo project
         run: |
           NAME="godot-servo-demo-${{ needs.prepare.outputs.version }}"
           SRC="godot-servo-${{ needs.prepare.outputs.version }}"
           cp -r "$SRC" "$NAME"
-          cp project.godot "$NAME/"
+          cp project.godot README.md README_ja.md LICENSE-APACHE LICENSE-MIT "$NAME/"
           cp -r demo "$NAME/"
           mkdir -p "$NAME/.godot"
           echo 'res://addons/godot_servo/godot_servo.gdextension' > "$NAME/.godot/extension_list.cfg"
