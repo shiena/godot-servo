@@ -18,7 +18,7 @@ jobs:
     outputs:
       version: ${{ steps.normalize.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -41,7 +41,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -59,7 +59,7 @@ jobs:
         shell: pwsh
         run: ./scripts/build.ps1 -Release
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bin-windows
           path: addons/godot_servo/bin/windows/
@@ -78,7 +78,7 @@ jobs:
           - os: ubuntu-latest
             platform: linux
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -101,7 +101,7 @@ jobs:
       - name: Build and stage the addon
         run: ./scripts/build.sh --release
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bin-${{ matrix.platform }}
           path: addons/godot_servo/bin/${{ matrix.platform }}/
@@ -112,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -134,7 +134,7 @@ jobs:
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
           ./scripts/build.sh --release --android
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bin-android
           path: addons/godot_servo/bin/android/
@@ -147,9 +147,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: staged
 

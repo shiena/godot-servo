@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install gdtoolkit
         run: python3 -m pip install --quiet "gdtoolkit==4.*"
       - name: Run gdlint
@@ -43,7 +43,7 @@ jobs:
     # above that, so a stalled self check cannot hold a runner for the default six.
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -82,7 +82,7 @@ jobs:
         timeout-minutes: 10
         run: ./scripts/build.ps1 -NoBuild -Test -Godot godot -TimeoutSeconds 300
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: godot_servo-windows
           path: addons/godot_servo/bin/windows/
@@ -98,7 +98,7 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -116,7 +116,7 @@ jobs:
       - name: Build and stage the addon
         run: ./scripts/build.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: godot_servo-${{ matrix.os }}
           path: addons/godot_servo/bin/
@@ -132,7 +132,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -154,7 +154,7 @@ jobs:
           # what an APK can carry.
           ./scripts/build.sh --release --android
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: godot_servo-android-arm64-v8a
           path: addons/godot_servo/bin/android/
