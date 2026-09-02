@@ -335,9 +335,9 @@ var _last_event_name := ""
 var _answers: Dictionary = {}
 
 
-func _on_bridge_event(name: String, payload: String) -> void:
-	_last_event_name = name
-	print("  <- bridge_event ", name, " ", payload)
+func _on_bridge_event(event_name: String, payload: String) -> void:
+	_last_event_name = event_name
+	print("  <- bridge_event ", event_name, " ", payload)
 
 
 func _on_script_result(id: int, value: Variant, error: String) -> void:

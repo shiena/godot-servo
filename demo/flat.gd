@@ -78,6 +78,9 @@ func _process(_delta: float) -> void:
 		return
 	view_size = view.size
 	browser.set_view_size_px(Vector2i(view_size))
+	# Resizing rebuilds Servo's surface, and with it the texture, so the one bound
+	# to the TextureRect is gone. Ask for the new one on the next frame.
+	texture_bound = false
 
 
 func _on_frame_updated() -> void:
@@ -99,7 +102,7 @@ func _on_title_changed(title: String) -> void:
 ## The page asked for a different mouse cursor: a link, a text field, a resizer.
 ## The TextureRect is hovered whenever the page is, so its own shape is enough.
 func _on_cursor_changed(shape: String) -> void:
-	view.mouse_default_cursor_shape = Cursors.godot_shape(shape)
+	view.mouse_default_cursor_shape = Cursors.godot_shape(shape) as Control.CursorShape
 
 
 ## Where to put the candidate window: undo the TextureRect's scaling to reach
