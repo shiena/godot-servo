@@ -23,6 +23,19 @@ jobs:
           components: rustfmt
       - run: cargo fmt --check
 
+  # gdtoolkit parses GDScript on its own, so the demo's scripts can be checked
+  # without Godot or a built addon. Which rules apply is in .gdlintrc.
+  gdscript:
+    name: Lint GDScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install gdtoolkit
+        run: python3 -m pip install --quiet "gdtoolkit==4.*"
+      - name: Run gdlint
+        run: python3 -m gdtoolkit.linter $(git ls-files '*.gd')
+
   windows:
     name: Build and self check (Windows)
     runs-on: windows-latest

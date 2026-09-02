@@ -1,0 +1,16 @@
+# gdlint config for the demo's GDScript. See the "Lint GDScript" step in
+# .github/workflows/ci.yaml; run it locally with:
+#
+#   python -m pip install "gdtoolkit==4.*"
+#   python -m gdtoolkit.linter $(git ls-files '*.gd')
+#
+# One style rule is relaxed. Everything semantic (unused-argument,
+# expression-not-assigned, duplicated-load, the name checks, ...) stays on,
+# because those catch real problems.
+#
+#   - class-definitions-order: the demo scripts declare a variable next to the
+#     block that uses it (the HUD's cached strings, the screenshot counters)
+#     rather than in one lump at the top. That grouping is what makes them
+#     readable as a demo, and it is not the order gdlint wants.
+disable:
+  - class-definitions-order
