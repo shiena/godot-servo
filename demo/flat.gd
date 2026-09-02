@@ -17,7 +17,12 @@ const Cursors = preload("res://demo/cursors.gd")
 @onready var select_picker: PopupMenu = $SelectPicker
 @onready var view_size := Vector2(browser.view_size)
 
+## Frames to wait after the last resize before telling Servo. Dragging a window
+## edge fires `resized` every frame, and each one reallocates Servo's surface.
+const RESIZE_SETTLE_FRAMES := 10
+
 var texture_bound := false
+var _resize_countdown := 0
 
 ## Where the pointer last was, in the TextureRect's coordinates. The `<select>`
 ## menu opens there.
@@ -33,6 +38,14 @@ func _ready() -> void:
 ## Converts the TextureRect's local coordinates to WebView pixels and forwards them.
 ## Mouse and touch both go through; the extension drops the duplicate synthetic events.
 func _on_view_input(event: InputEvent) -> void:
+	# The TextureRect takes focus when clicked, so key events only arrive here
+	# while the page holds the keyboard; anywhere else they stay with the game.
+	# Accepting them stops Tab from moving the focus on.
+	if event is InputEventKey:
+		browser.feed_input(event, Vector2.ZERO)
+		view.accept_event()
+		return
+
 	var local: Vector2
 	if event is InputEventMouse:
 		local = (event as InputEventMouse).position
@@ -51,9 +64,20 @@ func _on_view_exited() -> void:
 	browser.notify_pointer_left()
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey:
-		browser.feed_input(event, Vector2.ZERO)
+## The panel is a window onto the page, so the page reflows with it rather than
+## being scaled up. Servo is told once the dragging stops.
+func _on_view_resized() -> void:
+	_resize_countdown = RESIZE_SETTLE_FRAMES
+
+
+func _process(_delta: float) -> void:
+	if _resize_countdown == 0:
+		return
+	_resize_countdown -= 1
+	if _resize_countdown > 0 or view.size.x < 1.0 or view.size.y < 1.0:
+		return
+	view_size = view.size
+	browser.set_view_size_px(Vector2i(view_size))
 
 
 func _on_frame_updated() -> void:

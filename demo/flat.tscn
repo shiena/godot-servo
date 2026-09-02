@@ -24,9 +24,9 @@ layout_mode = 2
 text = "Starting..."
 
 [node name="View" type="TextureRect" parent="Layout"]
-custom_minimum_size = Vector2(1280, 720)
 layout_mode = 2
 size_flags_vertical = 3
+focus_mode = 1
 mouse_filter = 0
 expand_mode = 1
 
@@ -39,6 +39,7 @@ autostart = false
 
 [connection signal="gui_input" from="Layout/View" to="." method="_on_view_input"]
 [connection signal="mouse_exited" from="Layout/View" to="." method="_on_view_exited"]
+[connection signal="resized" from="Layout/View" to="." method="_on_view_resized"]
 [connection signal="bridge_event" from="Browser" to="." method="_on_bridge_event"]
 [connection signal="crashed" from="Browser" to="." method="_on_crashed"]
 [connection signal="cursor_changed" from="Browser" to="." method="_on_cursor_changed"]

@@ -34,6 +34,13 @@ var last_point := Vector2.ZERO
 ## is the whole window's; it is only put up while the pointer is on the panel,
 ## and taken down again on the way out.
 var page_cursor: int = Input.CURSOR_ARROW
+
+## Whether the page holds the keyboard. Without this every keystroke would go to
+## the page and to the game at once, and a game's own W, A, S and D would land in
+## whatever the player is typing into.
+var panel_focused := false
+## Set by the panel's own handler when a click reaches it. See `_resolve_click()`.
+var _panel_took_click := false
 var texture_bound := false
 
 
@@ -62,6 +69,12 @@ func _on_panel_input(
 	last_point = _world_to_view_pixels(hit)
 	Input.set_default_cursor_shape(page_cursor)
 
+	# Reaching this handler means the click landed on the panel, so this is what
+	# hands the page the keyboard.
+	if event is InputEventMouseButton and event.is_pressed():
+		_panel_took_click = true
+		_set_panel_focused(true)
+
 	# Touch goes through as well; the extension drops the duplicate mouse events.
 	if event is InputEventMouseMotion or event is InputEventMouseButton \
 			or event is InputEventScreenTouch or event is InputEventScreenDrag:
@@ -89,9 +102,30 @@ func _world_to_view_pixels(world_position: Vector3) -> Vector2:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# A click that misses the panel takes the keyboard back. Whether it missed is
+	# only known once the physics picking has run, which happens either side of
+	# this, so the answer is settled at the end of the frame instead.
+	if event is InputEventMouseButton and event.is_pressed():
+		_resolve_click.call_deferred()
+		return
+
 	# Key events need no position, but pass the last one to keep the API uniform.
-	if event is InputEventKey:
+	if panel_focused and event is InputEventKey:
 		browser.feed_input(event, last_point)
+
+
+func _resolve_click() -> void:
+	if _panel_took_click:
+		_panel_took_click = false
+		return
+	_set_panel_focused(false)
+
+
+func _set_panel_focused(focused: bool) -> void:
+	if panel_focused == focused:
+		return
+	panel_focused = focused
+	_refresh_hud("", "")
 
 
 # ── Notifications from Servo ─────────────────────────────────────────────
