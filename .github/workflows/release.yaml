@@ -36,6 +36,26 @@ jobs:
             exit 1
           fi
 
+      # The version is written once, here. Every build job takes Cargo.toml and
+      # Cargo.lock from this artifact rather than editing its own copy, so the four
+      # of them cannot disagree about what was built, and `package` commits the very
+      # files the binaries came from.
+      - name: Set the crate version
+        run: |
+          version="${{ steps.normalize.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"${version#v}\"/" Cargo.toml
+          # Carry the bump into the lockfile as well, so it cannot drift from Cargo.toml.
+          cargo update --workspace
+          grep -m1 '^version' Cargo.toml
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: version-commit
+          path: |
+            Cargo.toml
+            Cargo.lock
+          if-no-files-found: error
+
   build-windows:
     needs: prepare
     runs-on: windows-latest
@@ -47,13 +67,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Set crate version
-        shell: pwsh
-        run: |
-          $version = '${{ needs.prepare.outputs.version }}'.TrimStart('v')
-          (Get-Content Cargo.toml) -replace '^version = ".*"', "version = `"$version`"" |
-            Set-Content Cargo.toml
-          cargo update --workspace
+      # After rust-cache on purpose. It keys its cache on Cargo.lock, so bumping the
+      # version first would miss the cache and rebuild Servo from scratch.
+      - name: Apply the version bump
+        uses: actions/download-artifact@v8
+        with:
+          name: version-commit
 
       - name: Build and stage the addon
         shell: pwsh
@@ -91,12 +110,12 @@ jobs:
           sudo apt-get install -y libx11-dev libxext-dev libgl1-mesa-dev \
             libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
 
-      - name: Set crate version
-        run: |
-          version="${{ needs.prepare.outputs.version }}"
-          sed -i.bak "s/^version = \".*\"/version = \"${version#v}\"/" Cargo.toml
-          rm -f Cargo.toml.bak
-          cargo update --workspace
+      # After rust-cache on purpose. It keys its cache on Cargo.lock, so bumping the
+      # version first would miss the cache and rebuild Servo from scratch.
+      - name: Apply the version bump
+        uses: actions/download-artifact@v8
+        with:
+          name: version-commit
 
       - name: Build and stage the addon
         run: ./scripts/build.sh --release
@@ -123,11 +142,12 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
-      - name: Set crate version
-        run: |
-          version="${{ needs.prepare.outputs.version }}"
-          sed -i "s/^version = \".*\"/version = \"${version#v}\"/" Cargo.toml
-          cargo update --workspace
+      # After rust-cache on purpose. It keys its cache on Cargo.lock, so bumping the
+      # version first would miss the cache and rebuild Servo from scratch.
+      - name: Apply the version bump
+        uses: actions/download-artifact@v8
+        with:
+          name: version-commit
 
       - name: Build and stage the addon
         run: |
@@ -147,11 +167,32 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Full history: this job pushes, and a shallow clone is not a reliable thing
+      # to push from.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v8
         with:
           path: staged
+
+      # The version the binaries were actually built with goes back onto main. It is
+      # the only commit a release makes. No tag is pushed here: `gh release create`
+      # below makes one, and it lands on main's head, which is this commit.
+      - name: Commit the version bump
+        run: |
+          cp staged/version-commit/Cargo.toml Cargo.toml
+          cp staged/version-commit/Cargo.lock Cargo.lock
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Already at ${{ needs.prepare.outputs.version }}; nothing to commit."
+          else
+            git commit -m "Release ${{ needs.prepare.outputs.version }}"
+            git push origin main
+          fi
 
       # The archive holds one thing, addons/godot_servo/, and the zip starts at
       # addons/ so there is no wrapper directory to strip. The Asset Store asks
