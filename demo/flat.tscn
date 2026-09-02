@@ -1,9 +1,50 @@
-[gd_scene load_steps=2 format=3 uid="uid://cservodemo2d"]
+[gd_scene load_steps=3 format=3 uid="uid://cservodemo2d"]
 
-[ext_resource type="Script" path="res://demo/flat.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://cy5ktsp6d2yfp" path="res://demo/flat.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://bq3x7n8vmk2ld" path="res://demo/select_picker.gd" id="2_picker"]
 
 [node name="Main" type="Control"]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("1_main")
+
+[node name="Layout" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Status" type="Label" parent="Layout"]
+layout_mode = 2
+text = "Starting..."
+
+[node name="View" type="TextureRect" parent="Layout"]
+custom_minimum_size = Vector2(1280, 720)
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 0
+expand_mode = 1
+
+[node name="SelectPicker" type="PopupMenu" parent="."]
+script = ExtResource("2_picker")
+
+[node name="Browser" type="ServoWebView" parent="."]
+view_size = Vector2i(1280, 720)
+autostart = false
+
+[connection signal="gui_input" from="Layout/View" to="." method="_on_view_input"]
+[connection signal="mouse_exited" from="Layout/View" to="." method="_on_view_exited"]
+[connection signal="bridge_event" from="Browser" to="." method="_on_bridge_event"]
+[connection signal="crashed" from="Browser" to="." method="_on_crashed"]
+[connection signal="dialog_alert" from="Browser" to="." method="_on_dialog_alert"]
+[connection signal="dialog_confirm" from="Browser" to="." method="_on_dialog_confirm"]
+[connection signal="dialog_prompt" from="Browser" to="." method="_on_dialog_prompt"]
+[connection signal="frame_updated" from="Browser" to="." method="_on_frame_updated"]
+[connection signal="ime_requested" from="Browser" to="." method="_on_ime_requested"]
+[connection signal="select_element_requested" from="Browser" to="." method="_on_select_element_requested"]
+[connection signal="title_changed" from="Browser" to="." method="_on_title_changed"]

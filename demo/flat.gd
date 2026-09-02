@@ -4,16 +4,18 @@ extends Control
 ## With no 3D panel in the way the coordinate maths is simple, so this is the
 ## place to start when isolating whether an image appears at all or whether input
 ## gets through.
+##
+## The TextureRect, the status line and the WebView node all sit in flat.tscn,
+## along with the signal wiring. Only the URL and the handlers are left here.
 
 const WebAssets = preload("res://demo/web_assets.gd")
-const SelectPicker = preload("res://demo/select_picker.gd")
 
-const VIEW_SIZE := Vector2i(1280, 720)
+@onready var browser: ServoWebView = $Browser
+@onready var view: TextureRect = $Layout/View
+@onready var status: Label = $Layout/Status
+@onready var select_picker: PopupMenu = $SelectPicker
+@onready var view_size := Vector2(browser.view_size)
 
-var browser: ServoWebView
-var view: TextureRect
-var status: Label
-var select_picker: PopupMenu
 var texture_bound := false
 
 ## Where the pointer last was, in the TextureRect's coordinates. The `<select>`
@@ -22,64 +24,14 @@ var last_point := Vector2.ZERO
 
 
 func _ready() -> void:
-	var root := VBoxContainer.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(root)
-
-	status = Label.new()
-	status.text = "Starting..."
-	root.add_child(status)
-
-	view = TextureRect.new()
-	view.custom_minimum_size = Vector2(VIEW_SIZE)
-	view.stretch_mode = TextureRect.STRETCH_SCALE
-	view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	view.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# Let the TextureRect itself receive input.
-	view.mouse_filter = Control.MOUSE_FILTER_STOP
-	view.gui_input.connect(_on_view_input)
-	view.mouse_exited.connect(_on_view_exited)
-	root.add_child(view)
-
-	select_picker = SelectPicker.new()
-	add_child(select_picker)
-
-	browser = ServoWebView.new()
-	browser.view_size = VIEW_SIZE
-	browser.url = _local_page_url()
-	add_child(browser)
-
-	browser.frame_updated.connect(_on_frame_updated)
-	browser.bridge_event.connect(_on_bridge_event)
-	browser.title_changed.connect(func(title: String) -> void: status.text = title)
-	browser.ime_requested.connect(_on_ime_requested)
-	browser.dialog_alert.connect(func(message: String) -> void:
-		_note("alert: %s" % message)
-		browser.respond_to_dialog(true, ""))
-	browser.dialog_confirm.connect(func(message: String) -> void:
-		_note("confirm: %s" % message)
-		browser.respond_to_dialog(true, ""))
-	browser.dialog_prompt.connect(func(message: String, default_value: String) -> void:
-		_note("prompt: %s" % message)
-		browser.respond_to_dialog(true, default_value))
-	browser.select_element_requested.connect(func(options: Array, multiple: bool) -> void:
-		_note("select: %d options" % options.size())
-		# Servo hands over the options and waits; the menu is Godot's to draw.
-		select_picker.open(browser, options, multiple, view.global_position + last_point))
-	browser.crashed.connect(func(reason: String) -> void:
-		push_error("godot-servo: page crashed: %s" % reason))
-
-
-func _local_page_url() -> String:
-	return WebAssets.page_url("index")
+	# The node starts with autostart off, so the URL can be set first.
+	browser.url = WebAssets.page_url("index")
+	browser.start()
 
 
 ## Converts the TextureRect's local coordinates to WebView pixels and forwards them.
 ## Mouse and touch both go through; the extension drops the duplicate synthetic events.
 func _on_view_input(event: InputEvent) -> void:
-	if browser == null:
-		return
-
 	var local: Vector2
 	if event is InputEventMouse:
 		local = (event as InputEventMouse).position
@@ -91,17 +43,15 @@ func _on_view_input(event: InputEvent) -> void:
 		return
 
 	last_point = local
-	var scale := Vector2(VIEW_SIZE) / view.size
-	browser.feed_input(event, local * scale)
+	browser.feed_input(event, local * (view_size / view.size))
 
 
 func _on_view_exited() -> void:
-	if browser != null:
-		browser.notify_pointer_left()
+	browser.notify_pointer_left()
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if browser != null and event is InputEventKey:
+	if event is InputEventKey:
 		browser.feed_input(event, Vector2.ZERO)
 
 
@@ -117,21 +67,53 @@ func _on_frame_updated() -> void:
 	status.text = "path: %s" % browser.get_backend_name()
 
 
+func _on_title_changed(title: String) -> void:
+	status.text = title
+
+
 ## Where to put the candidate window: undo the TextureRect's scaling to reach
 ## screen coordinates.
 func _on_ime_requested(caret: Rect2, _multiline: bool) -> void:
-	var scale := view.size / Vector2(VIEW_SIZE)
 	var bottom_left := Vector2(caret.position.x, caret.position.y + caret.size.y)
-	browser.ime_anchor = view.global_position + bottom_left * scale
+	browser.ime_anchor = view.global_position + bottom_left * (view.size / view_size)
 
 
-func _on_bridge_event(name: String, payload: String) -> void:
-	status.text = "%s %s" % [name, payload]
-	print("godot-servo: bridge_event ", name, " ", payload)
+func _on_bridge_event(event_name: String, payload: String) -> void:
+	status.text = "%s %s" % [event_name, payload]
+	print("godot-servo: bridge_event ", event_name, " ", payload)
+
+
+# ── UI requests from the page ────────────────────────────────────────────
+#
+# The page's JavaScript is blocked until each of these is answered. The demo
+# answers the dialogs straight away and shows what they said on the status line;
+# `<select>` gets a real menu, because Servo draws no dropdown of its own.
+
+func _on_dialog_alert(message: String) -> void:
+	_note("alert: %s" % message)
+	browser.respond_to_dialog(true, "")
+
+
+func _on_dialog_confirm(message: String) -> void:
+	_note("confirm: %s" % message)
+	browser.respond_to_dialog(true, "")
+
+
+func _on_dialog_prompt(message: String, default_value: String) -> void:
+	_note("prompt: %s" % message)
+	browser.respond_to_dialog(true, default_value)
+
+
+func _on_select_element_requested(options: Array, allow_multiple: bool) -> void:
+	_note("select: %d options" % options.size())
+	select_picker.open(browser, options, allow_multiple, view.global_position + last_point)
+
+
+func _on_crashed(reason: String) -> void:
+	push_error("godot-servo: page crashed: %s" % reason)
 
 
 ## Shows a notification from the page on the status line.
 func _note(text: String) -> void:
-	if status != null:
-		status.text = text
+	status.text = text
 	print("godot-servo: ", text)

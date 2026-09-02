@@ -1,6 +1,137 @@
-[gd_scene load_steps=2 format=3 uid="uid://cservodemo3d"]
+[gd_scene load_steps=9 format=3 uid="uid://cservodemo3d"]
 
-[ext_resource type="Script" path="res://demo/main.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://dy8t10l8e71ga" path="res://demo/main.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://bq3x7n8vmk2ld" path="res://demo/select_picker.gd" id="2_picker"]
+
+[sub_resource type="Environment" id="Environment_world"]
+background_mode = 1
+background_color = Color(0.06, 0.07, 0.1, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.35, 0.38, 0.45, 1)
+ambient_light_energy = 0.6
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_backdrop"]
+albedo_color = Color(0.25, 0.3, 0.42, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_backdrop"]
+material = SubResource("StandardMaterial3D_backdrop")
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen"]
+size = Vector2(1.92, 1.08)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_screen"]
+shading_mode = 0
+texture_filter = 1
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_click"]
+size = Vector3(1.92, 1.08, 0.02)
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_world")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-45, -35, 0)
+
+[node name="Camera3D" type="Camera3D" parent="."]
+position = Vector3(0, 0, 1)
+
+[node name="Backdrop" type="Node3D" parent="."]
+
+[node name="Box1" type="MeshInstance3D" parent="Backdrop"]
+position = Vector3(3.52, 0.9, -2.2)
+rotation_degrees = Vector3(34, 61, 12)
+scale = Vector3(0.43, 0.43, 0.43)
+mesh = SubResource("BoxMesh_backdrop")
+
+[node name="Box2" type="MeshInstance3D" parent="Backdrop"]
+position = Vector3(-4.72, -1.28, -3)
+rotation_degrees = Vector3(-18, 25, 47)
+scale = Vector3(0.67, 0.67, 0.67)
+mesh = SubResource("BoxMesh_backdrop")
+
+[node name="Box3" type="MeshInstance3D" parent="Backdrop"]
+position = Vector3(4.32, -1.44, -2.6)
+rotation_degrees = Vector3(52, -37, 8)
+scale = Vector3(0.36, 0.36, 0.36)
+mesh = SubResource("BoxMesh_backdrop")
+
+[node name="Box4" type="MeshInstance3D" parent="Backdrop"]
+position = Vector3(-5.62, 1.87, -4.2)
+rotation_degrees = Vector3(11, 74, -29)
+scale = Vector3(0.78, 0.78, 0.78)
+mesh = SubResource("BoxMesh_backdrop")
+
+[node name="Box5" type="MeshInstance3D" parent="Backdrop"]
+position = Vector3(6.84, 1.2, -5)
+rotation_degrees = Vector3(-41, 16, 63)
+scale = Vector3(1.1, 1.1, 1.1)
+mesh = SubResource("BoxMesh_backdrop")
+
+[node name="Box6" type="MeshInstance3D" parent="Backdrop"]
+position = Vector3(-3.18, 1.35, -2)
+rotation_degrees = Vector3(27, -55, 33)
+scale = Vector3(0.25, 0.25, 0.25)
+mesh = SubResource("BoxMesh_backdrop")
+
+[node name="Box7" type="MeshInstance3D" parent="Backdrop"]
+position = Vector3(5.34, -1.01, -3.6)
+rotation_degrees = Vector3(68, 42, -14)
+scale = Vector3(0.54, 0.54, 0.54)
+mesh = SubResource("BoxMesh_backdrop")
+
+[node name="Box8" type="MeshInstance3D" parent="Backdrop"]
+position = Vector3(-7.48, -2.04, -5.8)
+rotation_degrees = Vector3(-9, -68, 21)
+scale = Vector3(1.18, 1.18, 1.18)
+mesh = SubResource("BoxMesh_backdrop")
+
+[node name="Screen" type="MeshInstance3D" parent="."]
+mesh = SubResource("QuadMesh_screen")
+material_override = SubResource("StandardMaterial3D_screen")
+
+[node name="Clickable" type="StaticBody3D" parent="Screen"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Screen/Clickable"]
+shape = SubResource("BoxShape3D_click")
+
+[node name="Hud" type="CanvasLayer" parent="."]
+
+[node name="Status" type="RichTextLabel" parent="Hud"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 12.0
+offset_top = 8.0
+offset_right = -12.0
+offset_bottom = 24.0
+grow_horizontal = 2
+theme_override_colors/default_color = Color(0.85, 0.9, 1, 1)
+bbcode_enabled = true
+text = "Starting..."
+fit_content = true
+scroll_active = false
+
+[node name="SelectPicker" type="PopupMenu" parent="."]
+script = ExtResource("2_picker")
+
+[node name="Browser" type="ServoWebView" parent="."]
+view_size = Vector2i(1280, 720)
+autostart = false
+
+[connection signal="input_event" from="Screen/Clickable" to="." method="_on_panel_input"]
+[connection signal="mouse_exited" from="Screen/Clickable" to="." method="_on_panel_exited"]
+[connection signal="bridge_event" from="Browser" to="." method="_on_bridge_event"]
+[connection signal="console_message" from="Browser" to="." method="_on_console_message"]
+[connection signal="crashed" from="Browser" to="." method="_on_crashed"]
+[connection signal="dialog_alert" from="Browser" to="." method="_on_dialog_alert"]
+[connection signal="dialog_confirm" from="Browser" to="." method="_on_dialog_confirm"]
+[connection signal="dialog_prompt" from="Browser" to="." method="_on_dialog_prompt"]
+[connection signal="frame_updated" from="Browser" to="." method="_on_frame_updated"]
+[connection signal="ime_dismissed" from="Browser" to="." method="_on_ime_dismissed"]
+[connection signal="ime_requested" from="Browser" to="." method="_on_ime_requested"]
+[connection signal="load_finished" from="Browser" to="." method="_on_load_finished"]
+[connection signal="select_element_requested" from="Browser" to="." method="_on_select_element_requested"]
+[connection signal="title_changed" from="Browser" to="." method="_on_title_changed"]
+[connection signal="url_changed" from="Browser" to="." method="_on_url_changed"]
