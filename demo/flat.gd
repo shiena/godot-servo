@@ -9,6 +9,7 @@ extends Control
 ## along with the signal wiring. Only the URL and the handlers are left here.
 
 const WebAssets = preload("res://demo/web_assets.gd")
+const Cursors = preload("res://demo/cursors.gd")
 
 @onready var browser: ServoWebView = $Browser
 @onready var view: TextureRect = $Layout/View
@@ -69,6 +70,12 @@ func _on_frame_updated() -> void:
 
 func _on_title_changed(title: String) -> void:
 	status.text = title
+
+
+## The page asked for a different mouse cursor: a link, a text field, a resizer.
+## The TextureRect is hovered whenever the page is, so its own shape is enough.
+func _on_cursor_changed(shape: String) -> void:
+	view.mouse_default_cursor_shape = Cursors.godot_shape(shape)
 
 
 ## Where to put the candidate window: undo the TextureRect's scaling to reach

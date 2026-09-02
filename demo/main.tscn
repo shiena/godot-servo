@@ -125,6 +125,7 @@ autostart = false
 [connection signal="bridge_event" from="Browser" to="." method="_on_bridge_event"]
 [connection signal="console_message" from="Browser" to="." method="_on_console_message"]
 [connection signal="crashed" from="Browser" to="." method="_on_crashed"]
+[connection signal="cursor_changed" from="Browser" to="." method="_on_cursor_changed"]
 [connection signal="dialog_alert" from="Browser" to="." method="_on_dialog_alert"]
 [connection signal="dialog_confirm" from="Browser" to="." method="_on_dialog_confirm"]
 [connection signal="dialog_prompt" from="Browser" to="." method="_on_dialog_prompt"]

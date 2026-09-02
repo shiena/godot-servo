@@ -10,6 +10,7 @@ extends Node3D
 ## cannot hold: the URL, which is built at runtime, and the handlers.
 
 const WebAssets = preload("res://demo/web_assets.gd")
+const Cursors = preload("res://demo/cursors.gd")
 
 @onready var browser: ServoWebView = $Browser
 @onready var screen: MeshInstance3D = $Screen
@@ -28,6 +29,11 @@ var external_material: ShaderMaterial
 ## The WebView pixel position the pointer last pointed at.
 ## Remembered because key events need a position too.
 var last_point := Vector2.ZERO
+
+## The cursor the page last asked for. The panel is not a Control, so the shape
+## is the whole window's; it is only put up while the pointer is on the panel,
+## and taken down again on the way out.
+var page_cursor: int = Input.CURSOR_ARROW
 var texture_bound := false
 
 
@@ -54,6 +60,7 @@ func _on_panel_input(
 	_camera: Node, event: InputEvent, hit: Vector3, _normal: Vector3, _shape: int
 ) -> void:
 	last_point = _world_to_view_pixels(hit)
+	Input.set_default_cursor_shape(page_cursor)
 
 	# Touch goes through as well; the extension drops the duplicate mouse events.
 	if event is InputEventMouseMotion or event is InputEventMouseButton \
@@ -63,6 +70,13 @@ func _on_panel_input(
 
 func _on_panel_exited() -> void:
 	browser.notify_pointer_left()
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+
+## The page asked for a different mouse cursor: a link, a text field, a resizer.
+func _on_cursor_changed(shape: String) -> void:
+	page_cursor = Cursors.godot_shape(shape)
+	Input.set_default_cursor_shape(page_cursor)
 
 
 ## Turns a hit position on the panel, in world space, into WebView pixels.
