@@ -34,12 +34,17 @@ pub struct VulkanDevice {
     _entry: ash::Entry,
     pub instance: ash::Instance,
     pub device: ash::Device,
+    /// Only the external-memory paths ask the physical device anything. macOS
+    /// imports Servo's IOSurface and never picks a memory type, so it has no
+    /// use for this.
+    #[cfg(not(target_os = "macos"))]
     pub physical_device: vk::PhysicalDevice,
 }
 
 impl VulkanDevice {
     pub fn from_godot() -> Result<Self, String> {
         let instance_handle = driver_resource(DriverResource::TOPMOST_OBJECT, "VkInstance")?;
+        #[cfg(not(target_os = "macos"))]
         let physical_handle = driver_resource(DriverResource::PHYSICAL_DEVICE, "VkPhysicalDevice")?;
         let device_handle = godot_logical_device()?;
 
@@ -56,6 +61,7 @@ impl VulkanDevice {
                 _entry: entry,
                 instance,
                 device,
+                #[cfg(not(target_os = "macos"))]
                 physical_device: vk::PhysicalDevice::from_raw(physical_handle),
             })
         }
@@ -93,6 +99,7 @@ impl VulkanDevice {
     /// Device-local for preference, but not as a requirement: which types an
     /// external handle is compatible with is the driver's call, and on some it
     /// does not intersect the device-local ones.
+    #[cfg(not(target_os = "macos"))]
     pub fn memory_type_index(&self, allowed: u32) -> Result<u32, String> {
         // An empty mask is its own diagnosis. It is what an import extension
         // reports when its entry point resolved to a stub rather than to the
