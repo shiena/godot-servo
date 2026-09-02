@@ -194,6 +194,24 @@ func _run() -> void:
 	_check("wheel -> scroll", after > scrolled_before + 1.0,
 		"scrollTop %.0f -> %.0f" % [scrolled_before, after])
 
+	# 14. Ctrl+A then Ctrl+C should reach the page and put the field on the
+	#     clipboard. Holding Ctrl makes the OS deliver a control character, which
+	#     Godot reports as unicode 0, so the shortcut only survives if the
+	#     extension recovers the letter from the keycode.
+	await _settle_scroll_to_top()
+	await _clear_input("#name")
+	_click(await _element_center("#name"))
+	await _sleep(0.3)
+	_send_text("clip")
+	await _sleep(0.3)
+	DisplayServer.clipboard_set("(not copied)")
+	_send_shortcut(KEY_A)
+	await get_tree().process_frame
+	_send_shortcut(KEY_C)
+	await _sleep(0.5)
+	var copied := DisplayServer.clipboard_get()
+	_check("ctrl+C copies the selection", copied == "clip", "clipboard '%s'" % copied)
+
 	_report()
 
 
@@ -275,6 +293,17 @@ func _settle_scroll_to_top() -> void:
 		if await _scroll_position() == 0.0:
 			return
 	push_warning("godot-servo self check: the page kept scrolling")
+
+
+## Sends a Ctrl shortcut the way Windows does: no usable unicode, only a keycode.
+func _send_shortcut(keycode: Key) -> void:
+	for pressed in [true, false]:
+		var key := InputEventKey.new()
+		key.keycode = keycode
+		key.physical_keycode = keycode
+		key.ctrl_pressed = true
+		key.pressed = pressed
+		browser.feed_input(key, Vector2.ZERO)
 
 
 ## Sends committed text the way Windows does: key events carrying a unicode value.

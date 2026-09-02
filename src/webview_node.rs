@@ -996,11 +996,49 @@ fn godot_key_to_servo(event: &Gd<InputEventKey>) -> Option<Key> {
         _ => {
             // Printable characters go through unchanged.
             let unicode = event.get_unicode();
-            let character = char::from_u32(unicode).filter(|c| !c.is_control())?;
-            return Some(Key::Character(character.to_string()));
+            if let Some(character) = char::from_u32(unicode).filter(|c| !c.is_control()) {
+                return Some(Key::Character(character.to_string()));
+            }
+            return shortcut_character(event).map(Key::Character);
         }
     };
     Some(Key::Named(named))
+}
+
+/// The character behind a shortcut such as Ctrl+C, which carries no usable unicode.
+///
+/// Holding Ctrl makes the OS deliver a control character — 0x03 for Ctrl+C — and
+/// Godot reports those as unicode 0. Without this, every such combination is
+/// dropped before it reaches Servo, and copy, paste and select-all do nothing.
+/// The keycode still names the key, so the character is recovered from it.
+///
+/// Only the letters and digits are covered. Punctuation sits at layout-dependent
+/// keycodes, and no shortcut worth relaying is on one.
+fn shortcut_character(event: &Gd<InputEventKey>) -> Option<String> {
+    if !(event.is_ctrl_pressed() || event.is_alt_pressed() || event.is_meta_pressed()) {
+        return None;
+    }
+
+    // `Key` is a wrapper around an ordinal, not a Rust enum, so the letters and
+    // digits are picked out by range rather than by pattern. Godot puts both at
+    // their ASCII codes, the letters uppercase.
+    let keycode = event.get_keycode().ord();
+    let letters = GodotKey::A.ord()..=GodotKey::Z.ord();
+    let digits = GodotKey::KEY_0.ord()..=GodotKey::KEY_9.ord();
+
+    let character = if letters.contains(&keycode) {
+        let upper = char::from_u32(keycode as u32)?;
+        if event.is_shift_pressed() {
+            upper
+        } else {
+            upper.to_ascii_lowercase()
+        }
+    } else if digits.contains(&keycode) {
+        char::from_u32(keycode as u32)?
+    } else {
+        return None;
+    };
+    Some(character.to_string())
 }
 
 /// What to put in `script_result`'s `error`.
