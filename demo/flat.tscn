@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://cservodemo2d"]
+[gd_scene load_steps=4 format=3 uid="uid://cservodemo2d"]
 
 [ext_resource type="Script" uid="uid://cy5ktsp6d2yfp" path="res://demo/flat.gd" id="1_main"]
 [ext_resource type="Script" uid="uid://bq3x7n8vmk2ld" path="res://addons/godot_servo/select_picker.gd" id="2_picker"]
+[ext_resource type="Script" path="res://addons/godot_servo/servo_texture_rect.gd" id="3_view"]
 
 [node name="Main" type="Control"]
 anchors_preset = 15
@@ -23,12 +24,14 @@ grow_vertical = 2
 layout_mode = 2
 text = "Starting..."
 
-[node name="View" type="TextureRect" parent="Layout"]
+[node name="View" type="TextureRect" parent="Layout" node_paths=PackedStringArray("browser")]
 layout_mode = 2
 size_flags_vertical = 3
 focus_mode = 1
 mouse_filter = 0
 expand_mode = 1
+script = ExtResource("3_view")
+browser = NodePath("../../Browser")
 
 [node name="SelectPicker" type="PopupMenu" parent="."]
 script = ExtResource("2_picker")
@@ -37,16 +40,11 @@ script = ExtResource("2_picker")
 view_size = Vector2i(1280, 720)
 autostart = false
 
-[connection signal="gui_input" from="Layout/View" to="." method="_on_view_input"]
-[connection signal="mouse_exited" from="Layout/View" to="." method="_on_view_exited"]
-[connection signal="resized" from="Layout/View" to="." method="_on_view_resized"]
 [connection signal="bridge_event" from="Browser" to="." method="_on_bridge_event"]
 [connection signal="crashed" from="Browser" to="." method="_on_crashed"]
-[connection signal="cursor_changed" from="Browser" to="." method="_on_cursor_changed"]
 [connection signal="dialog_alert" from="Browser" to="." method="_on_dialog_alert"]
 [connection signal="dialog_confirm" from="Browser" to="." method="_on_dialog_confirm"]
 [connection signal="dialog_prompt" from="Browser" to="." method="_on_dialog_prompt"]
-[connection signal="frame_updated" from="Browser" to="." method="_on_frame_updated"]
-[connection signal="ime_requested" from="Browser" to="." method="_on_ime_requested"]
+[connection signal="load_finished" from="Browser" to="." method="_on_load_finished"]
 [connection signal="select_element_requested" from="Browser" to="." method="_on_select_element_requested"]
 [connection signal="title_changed" from="Browser" to="." method="_on_title_changed"]

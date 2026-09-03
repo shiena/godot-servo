@@ -206,11 +206,11 @@ jobs:
           # The helpers travel with the addon rather than with the demo: a project
           # that never opens the demo still needs the samplerExternalOES shader on
           # Android, and a <select> is unanswerable without a menu of some kind.
-          cp addons/godot_servo/README.md addons/godot_servo/icon.svg \
-            addons/godot_servo/cursors.gd addons/godot_servo/cursors.gd.uid \
-            addons/godot_servo/select_picker.gd addons/godot_servo/select_picker.gd.uid \
-            addons/godot_servo/servo_external.gdshader \
-            addons/godot_servo/servo_external.gdshader.uid \
+          # Everything but bin/, which the artifacts below fill in — a glob rather
+          # than a list, so a helper added later cannot be left out of a release.
+          cp addons/godot_servo/*.gd addons/godot_servo/*.gd.uid \
+            addons/godot_servo/*.gdshader addons/godot_servo/*.gdshader.uid \
+            addons/godot_servo/README.md addons/godot_servo/icon.svg \
             LICENSE-APACHE LICENSE-MIT "$NAME/addons/godot_servo/"
           # The .gdextension goes inside the addon. Its res:// paths are absolute,
           # so the file itself can sit anywhere. A second copy at the root would

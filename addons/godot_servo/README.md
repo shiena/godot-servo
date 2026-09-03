@@ -7,16 +7,34 @@ no editor plugin and nothing to enable in the Plugins tab.
 What it does, the full API, and the per-platform notes are in the repository README:
 <https://github.com/shiena/godot-servo#readme>
 
-Three helpers ship alongside the library, for the parts a project cannot do without and
-should not have to write twice:
+## Helpers
+
+Scripts ship alongside the library for the parts a project cannot do without and should
+not have to write twice. None uses `class_name`: the global class table is written by the
+editor and is missing on a checkout that has only run `--import`, and a script naming an
+absent global class fails to parse. Reach them with `preload()` and a path.
+
+Two of them do most of the work. Attach one to the node the page is displayed on, point
+`browser` at the `ServoWebView`, and they take over binding the texture, converting
+pointer positions, forwarding input, the cursor, and the IME anchor:
 
 | | |
 | --- | --- |
-| `cursors.gd` | Turns the CSS cursor names `cursor_changed` carries into Godot cursor shapes. |
-| `select_picker.gd` | A `PopupMenu` that answers a page's `<select>`. Servo draws no dropdown of its own. |
-| `servo_external.gdshader` | Declares `samplerExternalOES`, which the Android Compatibility path needs to read its texture at all. |
+| `servo_texture_rect.gd` | On a `TextureRect`. Also follows the control's size, telling Servo once a drag has settled so the page reflows. |
+| `servo_panel_3d.gd` | On a `MeshInstance3D` with a `QuadMesh` and a `CollisionObject3D` child. Also arbitrates which of the game and the page holds the keyboard, and projects page positions onto the screen. |
 
-None is wired up for you; the demo scenes show how each is used.
+Neither answers the page for you. The URL, `bridge_event`, and the dialogs stay with the
+game, and the rest are there for that:
+
+| | |
+| --- | --- |
+| `local_pages.gd` | A `file://` URL for a page bundled under `res://`. After an export those files live inside the PCK with nothing behind them, so this copies the tree out to `user://` first. |
+| `select_picker.gd` | A `PopupMenu` that answers a page's `<select>`. Servo draws no dropdown of its own. |
+| `cursors.gd` | Turns the CSS cursor names `cursor_changed` carries into Godot cursor shapes. Both components above use it already. |
+| `servo_external.gdshader` | Declares `samplerExternalOES`, which the Android Compatibility path needs to read its texture at all. `servo_external_canvas.gdshader` is the `canvas_item` counterpart. |
+
+The demo scenes are the worked example: `demo/main.tscn` for the panel, `demo/flat.tscn`
+for the control.
 
 ## Install
 

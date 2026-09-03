@@ -103,9 +103,13 @@ Godot で GPU メモリを共有できます。dma-buf や `AHardwareBuffer` の
 ```
 godot_servo.gdextension          拡張のマニフェスト。プロジェクト直下に置く
 addons/godot_servo/
-  cursors.gd                     CSS のカーソル名を Godot のカーソル形状へ
+  servo_texture_rect.gd          TextureRect にページを載せて操作を通す
+  servo_panel_3d.gd              同じことを 3D の QuadMesh パネルで
+  local_pages.gd                 res:// のページを開ける file:// URL にする
   select_picker.gd               ページの <select> に答える PopupMenu
+  cursors.gd                     CSS のカーソル名を Godot のカーソル形状へ
   servo_external.gdshader        Android GLES3 経路用の samplerExternalOES
+  servo_external_canvas.gdshader 同じものの Control 版
   bin/                           ビルド成果物の置き場 (コミットしない)
     windows/godot_servo.x86_64.dll
     windows/libEGL.dll           ANGLE。実行時に名前で読まれる
@@ -205,6 +209,14 @@ Android は release でしかビルドしません。大半は SpiderMonkey、St
 そして ICU のデータです。
 
 ## 使いかた
+
+いちばん短い道はアドオンのコンポーネントです。`TextureRect` に `servo_texture_rect.gd` を、
+または `QuadMesh` と `CollisionObject3D` の子を持つ `MeshInstance3D` に `servo_panel_3d.gd` を
+アタッチし、スクリプトの `browser` を WebView ノードに向けてください。テクスチャ、座標変換、
+入力の転送、カーソル、IME アンカーはこの 2 つが引き受けます。つまり以下のうち、URL と
+ページからの返答以外はすべて不要になります。実例は `demo/main.tscn` と `demo/flat.tscn` です。
+
+以降は、そのコンポーネントが中で何をしているかの説明です。自分で書きたい場合に読んでください。
 
 ```gdscript
 var browser := ServoWebView.new()

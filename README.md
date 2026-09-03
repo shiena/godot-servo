@@ -107,9 +107,13 @@ The repository root is the Godot project. Clone it, open it in Godot, and it run
 ```
 godot_servo.gdextension          Extension manifest, at the project root
 addons/godot_servo/
-  cursors.gd                     CSS cursor names to Godot cursor shapes
+  servo_texture_rect.gd          Put the page on a TextureRect and drive it
+  servo_panel_3d.gd              The same, on a QuadMesh panel in 3D
+  local_pages.gd                 A file:// URL for a page bundled in res://
   select_picker.gd               A PopupMenu that answers a page's <select>
+  cursors.gd                     CSS cursor names to Godot cursor shapes
   servo_external.gdshader        samplerExternalOES, for the Android GLES3 path
+  servo_external_canvas.gdshader The same, for a Control
   bin/                           Build output (not committed)
     windows/godot_servo.x86_64.dll
     windows/libEGL.dll           ANGLE, loaded by name at runtime
@@ -209,6 +213,16 @@ Android is only ever built in release. Most of the size is SpiderMonkey, Stylo, 
 ICU data.
 
 ## Quickstart
+
+The shortest route is the addon's own components. Attach `servo_texture_rect.gd` to a
+`TextureRect`, or `servo_panel_3d.gd` to a `MeshInstance3D` with a `QuadMesh` and a
+`CollisionObject3D` child, and point the script's `browser` at the WebView node. Between
+them they own the texture, the coordinate conversion, the input forwarding, the cursor and
+the IME anchor — everything below this line except the URL and what the page sends back.
+`demo/main.tscn` and `demo/flat.tscn` are the two worked examples.
+
+The rest of this section is what those components do, for a project that wants to do it
+itself.
 
 ```gdscript
 var browser := ServoWebView.new()

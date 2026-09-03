@@ -1,47 +1,20 @@
 extends Node3D
 ## The in-game browser demo.
 ##
-## Puts what Servo rendered on a panel in 3D space and forwards clicks, scrolling
-## and keystrokes straight to the WebView. Events coming back from the page
-## arrive on ServoWebView's bridge_event signal.
+## Puts what Servo rendered on a panel in 3D space. The panel carries the addon's
+## `servo_panel_3d.gd`, which owns the texture, the coordinate maths both ways,
+## the input forwarding, the keyboard focus, the cursor and the IME anchor.
 ##
-## The panel, the camera, the HUD and the WebView node all sit in main.tscn, and
-## the signals are wired there too. What is left here is only what a scene file
-## cannot hold: the URL, which is built at runtime, and the handlers.
+## What is left here is what a scene file cannot hold and the addon cannot decide
+## for a game: the URL, which is built at runtime, and what to do with what the
+## page says back.
 
 const WebAssets = preload("res://demo/web_assets.gd")
-const Cursors = preload("res://addons/godot_servo/cursors.gd")
 
 @onready var browser: ServoWebView = $Browser
 @onready var screen: MeshInstance3D = $Screen
-@onready var camera: Camera3D = $Camera3D
 @onready var hud: RichTextLabel = $Hud/Status
 @onready var select_picker: PopupMenu = $SelectPicker
-@onready var material: StandardMaterial3D = screen.material_override as StandardMaterial3D
-
-## The panel's physical size in metres and the WebView resolution in pixels, both
-## read back from the scene so the conversion below cannot drift away from it.
-@onready var panel_size: Vector2 = (screen.mesh as QuadMesh).size
-@onready var view_size := Vector2(browser.view_size)
-
-var external_material: ShaderMaterial
-
-## The WebView pixel position the pointer last pointed at.
-## Remembered because key events need a position too.
-var last_point := Vector2.ZERO
-
-## The cursor the page last asked for. The panel is not a Control, so the shape
-## is the whole window's; it is only put up while the pointer is on the panel,
-## and taken down again on the way out.
-var page_cursor: int = Input.CURSOR_ARROW
-
-## Whether the page holds the keyboard. Without this every keystroke would go to
-## the page and to the game at once, and a game's own W, A, S and D would land in
-## whatever the player is typing into.
-var panel_focused := false
-## Set by the panel's own handler when a click reaches it. See `_resolve_click()`.
-var _panel_took_click := false
-var texture_bound := false
 
 
 func _ready() -> void:
@@ -60,104 +33,7 @@ func _local_page_url() -> String:
 	return WebAssets.page_url(page)
 
 
-# ── Forwarding input ─────────────────────────────────────────────────────
-
-## Converts mouse and touch input on the panel to WebView pixels and forwards it.
-func _on_panel_input(
-	_camera: Node, event: InputEvent, hit: Vector3, _normal: Vector3, _shape: int
-) -> void:
-	last_point = _world_to_view_pixels(hit)
-	Input.set_default_cursor_shape(page_cursor)
-
-	# Reaching this handler means the click landed on the panel, so this is what
-	# hands the page the keyboard.
-	if event is InputEventMouseButton and event.is_pressed():
-		_panel_took_click = true
-		_set_panel_focused(true)
-
-	# Touch goes through as well; the extension drops the duplicate mouse events.
-	if event is InputEventMouseMotion or event is InputEventMouseButton \
-			or event is InputEventScreenTouch or event is InputEventScreenDrag:
-		browser.feed_input(event, last_point)
-
-
-func _on_panel_exited() -> void:
-	browser.notify_pointer_left()
-	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
-
-
-## The page asked for a different mouse cursor: a link, a text field, a resizer.
-func _on_cursor_changed(shape: String) -> void:
-	page_cursor = Cursors.godot_shape(shape)
-	Input.set_default_cursor_shape(page_cursor)
-
-
-## Turns a hit position on the panel, in world space, into WebView pixels.
-func _world_to_view_pixels(world_position: Vector3) -> Vector2:
-	var local := screen.global_transform.affine_inverse() * world_position
-	# A QuadMesh is centred on its origin. Flip Y to put (0, 0) at the top left.
-	var u := local.x / panel_size.x + 0.5
-	var v := 0.5 - local.y / panel_size.y
-	return Vector2(u * view_size.x, v * view_size.y)
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	# A click that misses the panel takes the keyboard back. Whether it missed is
-	# only known once the physics picking has run, which happens either side of
-	# this, so the answer is settled at the end of the frame instead.
-	if event is InputEventMouseButton and event.is_pressed():
-		_resolve_click.call_deferred()
-		return
-
-	# Key events need no position, but pass the last one to keep the API uniform.
-	if panel_focused and event is InputEventKey:
-		browser.feed_input(event, last_point)
-
-
-func _resolve_click() -> void:
-	if _panel_took_click:
-		_panel_took_click = false
-		return
-	_set_panel_focused(false)
-
-
-func _set_panel_focused(focused: bool) -> void:
-	if panel_focused == focused:
-		return
-	panel_focused = focused
-	_refresh_hud("", "")
-
-
 # ── Notifications from Servo ─────────────────────────────────────────────
-
-func _on_frame_updated() -> void:
-	if texture_bound:
-		return
-	# The texture stays the same object for the whole run, so bind it once.
-	var texture: Texture2D = browser.get_texture()
-	if texture == null:
-		return
-	if browser.needs_external_sampler():
-		# Android's shared buffer arrives as a GL_TEXTURE_EXTERNAL_OES, which a
-		# `sampler2D` cannot read. Swap in a shader that uses `samplerExternalOES`.
-		# It is loaded here rather than kept in the scene because desktop drivers
-		# reject `samplerExternalOES` outright.
-		external_material = ShaderMaterial.new()
-		external_material.shader = load("res://addons/godot_servo/servo_external.gdshader")
-		external_material.set_shader_parameter("servo_texture", texture)
-		screen.material_override = external_material
-		texture_bound = true
-		print("godot-servo: texture path = ", browser.get_backend_name(), " (external sampler)")
-		return
-
-	material.albedo_texture = texture
-	if browser.is_texture_flipped_v():
-		# Only the macOS IOSurface path arrives upside down. Undo it in the material.
-		material.uv1_scale = Vector3(1.0, -1.0, 1.0)
-		material.uv1_offset = Vector3(0.0, 1.0, 0.0)
-	texture_bound = true
-	print("godot-servo: texture path = ", browser.get_backend_name())
-
 
 func _on_title_changed(title: String) -> void:
 	_refresh_hud(title, "")
@@ -169,6 +45,13 @@ func _on_url_changed(url: String) -> void:
 
 func _on_load_finished() -> void:
 	print("godot-servo: page load finished")
+	print("godot-servo: texture path = ", browser.get_backend_name())
+	_refresh_hud("", "")
+
+
+## The panel took the keyboard, or gave it back.
+func _on_screen_focus_changed(_page_has_keyboard: bool) -> void:
+	_refresh_hud("", "")
 
 
 var _title := ""
@@ -188,12 +71,10 @@ func _refresh_hud(title: String, url: String) -> void:
 		_title = title
 	if url != "":
 		_url = url
-	hud.text = "[b]%s[/b]  —  %s\npath: %s\nlast event: %s" % [
-		_title,
-		_short_url(_url),
-		browser.get_backend_name(),
-		_last_event,
-	]
+	hud.text = (
+		"[b]%s[/b]  —  %s\npath: %s\nlast event: %s"
+		% [_title, _short_url(_url), browser.get_backend_name(), _last_event]
+	)
 
 
 ## Where the page's godot.emit() and <a href="godot:..."> arrive.
@@ -254,26 +135,16 @@ func _on_dialog_prompt(message: String, default_value: String) -> void:
 ## `options` is an array of `{ id, label, disabled, group }` dictionaries.
 ##
 ## Servo draws no dropdown of its own, so the menu is a Godot PopupMenu. It goes
-## where the pointer last was, which is the `<select>` the player just clicked:
-## back through the panel into world space, then onto the screen.
+## where the pointer last was, which is the `<select>` the player just clicked;
+## the panel is what projects that back onto the screen.
 func _on_select_element_requested(options: Array, allow_multiple: bool) -> void:
 	_last_event = "select: %d options -> picker open" % options.size()
 	_refresh_hud("", "")
-	var at := camera.unproject_position(_view_pixels_to_world(last_point))
+	var at: Vector2 = screen.view_pixels_to_screen(screen.last_point)
 	select_picker.open(browser, options, allow_multiple, at)
 
 
-# ── IME ───────────────────────────────────────────────────────────────────
-
-## Called when a text field in the page takes focus.
-##
-## The OS places the candidate window in window coordinates, so the caret
-## position on the panel has to be projected to screen coordinates and handed
-## over. Without that, candidates appear at the top left of the window.
-func _on_ime_requested(caret: Rect2, _multiline: bool) -> void:
-	# The caret's bottom-left corner is where the candidate window should go.
-	var bottom_left := Vector2(caret.position.x, caret.position.y + caret.size.y)
-	browser.ime_anchor = camera.unproject_position(_view_pixels_to_world(bottom_left))
+func _on_ime_requested(_caret: Rect2, _multiline: bool) -> void:
 	_last_event = "IME on (composed input works)"
 	_refresh_hud("", "")
 
@@ -281,17 +152,6 @@ func _on_ime_requested(caret: Rect2, _multiline: bool) -> void:
 func _on_ime_dismissed() -> void:
 	_last_event = "IME off"
 	_refresh_hud("", "")
-
-
-## The inverse of `_world_to_view_pixels()`.
-func _view_pixels_to_world(point: Vector2) -> Vector3:
-	var u := point.x / view_size.x
-	var v := point.y / view_size.y
-	var local := Vector3(
-		(u - 0.5) * panel_size.x,
-		(0.5 - v) * panel_size.y,
-		0.0)
-	return screen.global_transform * local
 
 
 # ── Checking that it works ───────────────────────────────────────────────

@@ -5,28 +5,17 @@ extends Control
 ## place to start when isolating whether an image appears at all or whether input
 ## gets through.
 ##
-## The TextureRect, the status line and the WebView node all sit in flat.tscn,
-## along with the signal wiring. Only the URL and the handlers are left here.
+## The TextureRect carries the addon's `servo_texture_rect.gd`, which owns the
+## texture, the input forwarding, the resize and the IME anchor. What is left
+## here is what the addon cannot decide for a game: which page to open, and what
+## to do with what the page says back.
 
 const WebAssets = preload("res://demo/web_assets.gd")
-const Cursors = preload("res://addons/godot_servo/cursors.gd")
 
 @onready var browser: ServoWebView = $Browser
 @onready var view: TextureRect = $Layout/View
 @onready var status: Label = $Layout/Status
 @onready var select_picker: PopupMenu = $SelectPicker
-@onready var view_size := Vector2(browser.view_size)
-
-## Frames to wait after the last resize before telling Servo. Dragging a window
-## edge fires `resized` every frame, and each one reallocates Servo's surface.
-const RESIZE_SETTLE_FRAMES := 10
-
-var texture_bound := false
-var _resize_countdown := 0
-
-## Where the pointer last was, in the TextureRect's coordinates. The `<select>`
-## menu opens there.
-var last_point := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -35,81 +24,12 @@ func _ready() -> void:
 	browser.start()
 
 
-## Converts the TextureRect's local coordinates to WebView pixels and forwards them.
-## Mouse and touch both go through; the extension drops the duplicate synthetic events.
-func _on_view_input(event: InputEvent) -> void:
-	# The TextureRect takes focus when clicked, so key events only arrive here
-	# while the page holds the keyboard; anywhere else they stay with the game.
-	# Accepting them stops Tab from moving the focus on.
-	if event is InputEventKey:
-		browser.feed_input(event, Vector2.ZERO)
-		view.accept_event()
-		return
-
-	var local: Vector2
-	if event is InputEventMouse:
-		local = (event as InputEventMouse).position
-	elif event is InputEventScreenTouch:
-		local = (event as InputEventScreenTouch).position
-	elif event is InputEventScreenDrag:
-		local = (event as InputEventScreenDrag).position
-	else:
-		return
-
-	last_point = local
-	browser.feed_input(event, local * (view_size / view.size))
-
-
-func _on_view_exited() -> void:
-	browser.notify_pointer_left()
-
-
-## The panel is a window onto the page, so the page reflows with it rather than
-## being scaled up. Servo is told once the dragging stops.
-func _on_view_resized() -> void:
-	_resize_countdown = RESIZE_SETTLE_FRAMES
-
-
-func _process(_delta: float) -> void:
-	if _resize_countdown == 0:
-		return
-	_resize_countdown -= 1
-	if _resize_countdown > 0 or view.size.x < 1.0 or view.size.y < 1.0:
-		return
-	view_size = view.size
-	browser.set_view_size_px(Vector2i(view_size))
-	# Resizing rebuilds Servo's surface, and with it the texture, so the one bound
-	# to the TextureRect is gone. Ask for the new one on the next frame.
-	texture_bound = false
-
-
-func _on_frame_updated() -> void:
-	if texture_bound:
-		return
-	var texture: Texture2D = browser.get_texture()
-	if texture == null:
-		return
-	view.texture = texture
-	view.flip_v = browser.is_texture_flipped_v()
-	texture_bound = true
+func _on_load_finished() -> void:
 	status.text = "path: %s" % browser.get_backend_name()
 
 
 func _on_title_changed(title: String) -> void:
 	status.text = title
-
-
-## The page asked for a different mouse cursor: a link, a text field, a resizer.
-## The TextureRect is hovered whenever the page is, so its own shape is enough.
-func _on_cursor_changed(shape: String) -> void:
-	view.mouse_default_cursor_shape = Cursors.godot_shape(shape) as Control.CursorShape
-
-
-## Where to put the candidate window: undo the TextureRect's scaling to reach
-## screen coordinates.
-func _on_ime_requested(caret: Rect2, _multiline: bool) -> void:
-	var bottom_left := Vector2(caret.position.x, caret.position.y + caret.size.y)
-	browser.ime_anchor = view.global_position + bottom_left * (view.size / view_size)
 
 
 func _on_bridge_event(event_name: String, payload: String) -> void:
@@ -138,9 +58,11 @@ func _on_dialog_prompt(message: String, default_value: String) -> void:
 	browser.respond_to_dialog(true, default_value)
 
 
+## The menu opens where the pointer last was, which is the `<select>` the player
+## just clicked. The TextureRect is what remembers that.
 func _on_select_element_requested(options: Array, allow_multiple: bool) -> void:
 	_note("select: %d options" % options.size())
-	select_picker.open(browser, options, allow_multiple, view.global_position + last_point)
+	select_picker.open(browser, options, allow_multiple, view.global_position + view.last_point)
 
 
 func _on_crashed(reason: String) -> void:
