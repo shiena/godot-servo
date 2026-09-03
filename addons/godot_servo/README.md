@@ -7,6 +7,17 @@ no editor plugin and nothing to enable in the Plugins tab.
 What it does, the full API, and the per-platform notes are in the repository README:
 <https://github.com/shiena/godot-servo#readme>
 
+Three helpers ship alongside the library, for the parts a project cannot do without and
+should not have to write twice:
+
+| | |
+| --- | --- |
+| `cursors.gd` | Turns the CSS cursor names `cursor_changed` carries into Godot cursor shapes. |
+| `select_picker.gd` | A `PopupMenu` that answers a page's `<select>`. Servo draws no dropdown of its own. |
+| `servo_external.gdshader` | Declares `samplerExternalOES`, which the Android Compatibility path needs to read its texture at all. |
+
+None is wired up for you; the demo scenes show how each is used.
+
 ## Install
 
 Merge this folder into your project so that it lands at `addons/godot_servo/`:

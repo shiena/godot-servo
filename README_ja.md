@@ -102,11 +102,15 @@ Godot で GPU メモリを共有できます。dma-buf や `AHardwareBuffer` の
 
 ```
 godot_servo.gdextension          拡張のマニフェスト。プロジェクト直下に置く
-addons/godot_servo/bin/          ビルド成果物の置き場 (コミットしない)
-  windows/godot_servo.x86_64.dll
-  windows/libEGL.dll             ANGLE。実行時に名前で読まれる
-  windows/libGLESv2.dll
-  android/arm64-v8a/libgodot_servo.so
+addons/godot_servo/
+  cursors.gd                     CSS のカーソル名を Godot のカーソル形状へ
+  select_picker.gd               ページの <select> に答える PopupMenu
+  servo_external.gdshader        Android GLES3 経路用の samplerExternalOES
+  bin/                           ビルド成果物の置き場 (コミットしない)
+    windows/godot_servo.x86_64.dll
+    windows/libEGL.dll           ANGLE。実行時に名前で読まれる
+    windows/libGLESv2.dll
+    android/arm64-v8a/libgodot_servo.so
 demo/                            デモのシーンとページ
 project.godot
 scripts/build.ps1 | build.sh     ビルドして bin/ へ配置する
@@ -230,8 +234,8 @@ browser.bridge_event.connect(func(name: String, payload: String) -> void:
   GL の左下原点を直す転送段が無いので、マテリアル側で上下を戻してください。
 - `needs_external_sampler()` は Android で true になります。共有バッファが
   `GL_TEXTURE_EXTERNAL_OES` のテクスチャとして届くためです。`sampler2D` では黒くしか読めないので、
-  `samplerExternalOES` を宣言したシェーダをマテリアルに使います。
-  最小限のものが `demo/servo_external.gdshader` にあります。
+  `samplerExternalOES` を宣言したシェーダをマテリアルに使います。最小限のものを
+  `addons/godot_servo/servo_external.gdshader` としてアドオンに同梱しています。
 
 ### 入力を転送する
 
@@ -281,8 +285,8 @@ OS の IME ではなくゲーム側の入力 UI から変換を駆動したい�
 ページの JavaScript を止めます。拡張自身は UI を持たないので、それぞれをシグナルで
 渡し、ゲーム側で好きな形に見せて返事をしてもらいます。`<select>` も同じで、Servo は
 ドロップダウンを描かずに選択肢の一覧を渡してきます。そのためゲーム側でメニューを出すまで、
-`<select>` をクリックしても何も起きていないように見えます。`demo/select_picker.gd` が
-その役をする小さな `PopupMenu` です。
+`<select>` をクリックしても何も起きていないように見えます。その役をする小さな `PopupMenu` を
+`addons/godot_servo/select_picker.gd` としてアドオンに同梱しています。
 
 ```gdscript
 browser.dialog_confirm.connect(func(message: String) -> void:

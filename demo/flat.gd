@@ -9,7 +9,7 @@ extends Control
 ## along with the signal wiring. Only the URL and the handlers are left here.
 
 const WebAssets = preload("res://demo/web_assets.gd")
-const Cursors = preload("res://demo/cursors.gd")
+const Cursors = preload("res://addons/godot_servo/cursors.gd")
 
 @onready var browser: ServoWebView = $Browser
 @onready var view: TextureRect = $Layout/View

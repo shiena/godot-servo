@@ -1,7 +1,7 @@
 [gd_scene load_steps=9 format=3 uid="uid://cservodemo3d"]
 
 [ext_resource type="Script" uid="uid://dy8t10l8e71ga" path="res://demo/main.gd" id="1_main"]
-[ext_resource type="Script" uid="uid://bq3x7n8vmk2ld" path="res://demo/select_picker.gd" id="2_picker"]
+[ext_resource type="Script" uid="uid://bq3x7n8vmk2ld" path="res://addons/godot_servo/select_picker.gd" id="2_picker"]
 
 [sub_resource type="Environment" id="Environment_world"]
 background_mode = 1

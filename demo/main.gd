@@ -10,7 +10,7 @@ extends Node3D
 ## cannot hold: the URL, which is built at runtime, and the handlers.
 
 const WebAssets = preload("res://demo/web_assets.gd")
-const Cursors = preload("res://demo/cursors.gd")
+const Cursors = preload("res://addons/godot_servo/cursors.gd")
 
 @onready var browser: ServoWebView = $Browser
 @onready var screen: MeshInstance3D = $Screen
@@ -143,7 +143,7 @@ func _on_frame_updated() -> void:
 		# It is loaded here rather than kept in the scene because desktop drivers
 		# reject `samplerExternalOES` outright.
 		external_material = ShaderMaterial.new()
-		external_material.shader = load("res://demo/servo_external.gdshader")
+		external_material.shader = load("res://addons/godot_servo/servo_external.gdshader")
 		external_material.set_shader_parameter("servo_texture", texture)
 		screen.material_override = external_material
 		texture_bound = true

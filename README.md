@@ -106,11 +106,15 @@ The repository root is the Godot project. Clone it, open it in Godot, and it run
 
 ```
 godot_servo.gdextension          Extension manifest, at the project root
-addons/godot_servo/bin/          Build output (not committed)
-  windows/godot_servo.x86_64.dll
-  windows/libEGL.dll             ANGLE, loaded by name at runtime
-  windows/libGLESv2.dll
-  android/arm64-v8a/libgodot_servo.so
+addons/godot_servo/
+  cursors.gd                     CSS cursor names to Godot cursor shapes
+  select_picker.gd               A PopupMenu that answers a page's <select>
+  servo_external.gdshader        samplerExternalOES, for the Android GLES3 path
+  bin/                           Build output (not committed)
+    windows/godot_servo.x86_64.dll
+    windows/libEGL.dll           ANGLE, loaded by name at runtime
+    windows/libGLESv2.dll
+    android/arm64-v8a/libgodot_servo.so
 demo/                            Demo scenes and pages
 project.godot
 scripts/build.ps1 | build.sh     Build, then stage into bin/
@@ -234,7 +238,8 @@ Two properties of the texture depend on the platform, and both demo scenes handl
   to correct GL's bottom-left origin. Flip it in the material.
 - `needs_external_sampler()` is true on Android, where the buffer arrives as a
   `GL_TEXTURE_EXTERNAL_OES` texture. A `sampler2D` reads it as black, so the material has to use a
-  shader that declares `samplerExternalOES`. `demo/servo_external.gdshader` is a minimal one.
+  shader that declares `samplerExternalOES`. The addon ships a minimal one as
+  `addons/godot_servo/servo_external.gdshader`.
 
 ### Forward input
 
@@ -287,8 +292,8 @@ until the embedder answers, and the extension has no UI of its own to answer wit
 Each arrives as a signal for the game to present however it likes, and the game
 answers. That goes for the `<select>` dropdown too: Servo hands over the option
 list instead of drawing a menu, so clicking a `<select>` looks like nothing
-happened until the game puts one on screen. `demo/select_picker.gd` is a small
-`PopupMenu` that does exactly that.
+happened until the game puts one on screen. The addon ships a small `PopupMenu` that does
+exactly that, `addons/godot_servo/select_picker.gd`.
 
 ```gdscript
 browser.dialog_confirm.connect(func(message: String) -> void:
