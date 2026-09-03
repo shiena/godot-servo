@@ -162,8 +162,7 @@ func _on_frame_updated() -> void:
 ## the uniform instead. Loaded here rather than kept in the scene, because
 ## desktop drivers reject `samplerExternalOES` outright.
 ##
-## Untested on hardware: the Android demo is the 3D panel, which takes the
-## spatial shader. Report anything that comes out wrong.
+## Verified on an Adreno 710 under GLES 3.2 Compatibility.
 func _read_through_external_sampler(current: Texture2D) -> void:
 	var shader_material := material as ShaderMaterial
 	if shader_material == null:

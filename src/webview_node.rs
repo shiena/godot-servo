@@ -293,6 +293,12 @@ impl ServoWebView {
             self.set_ime_enabled(false);
         }
         if let Some(mut inner) = self.inner.take() {
+            // Same rule as `start()` and `set_view_size_px()`: capture before the
+            // first thing that makes Servo's context current. Tearing down is no
+            // exception — `release()` deletes GL objects through Servo's context,
+            // and dropping Servo destroys it, so without this Godot is left
+            // rendering against a context that is first wrong and then gone.
+            let _host_context = HostContext::capture();
             inner.bridge.release(&inner.context);
             drop(inner.webview);
             drop(inner.servo);
@@ -411,6 +417,15 @@ impl ServoWebView {
         let Some(inner) = self.inner.as_mut() else {
             return;
         };
+        // Before the first line below that touches GL, and held to the end.
+        // `recreate_surface()` and `release()` both make Servo's context current,
+        // so capturing any later records Servo's as the one to go back to, and
+        // Godot carries on rendering against it. On Android's Compatibility
+        // renderer that is fatal rather than merely wrong: Godot's buffer names
+        // do not exist in Servo's context, `glBindBuffer` silently creates empty
+        // ones there, and the canvas renderer's `glMapBufferRange` then fails and
+        // is memcpy'd into unchecked.
+        let host = HostContext::capture();
         if let Err(error) = inner.context.recreate_surface(size) {
             godot_error!("godot-servo: could not resize the rendering surface: {error:?}");
             return;
@@ -418,7 +433,7 @@ impl ServoWebView {
         inner.webview.resize(size);
         // The surface changed, so rebuild the texture bridge too.
         inner.bridge.release(&inner.context);
-        inner.bridge = bridge::create(&inner.context, size, &HostContext::capture());
+        inner.bridge = bridge::create(&inner.context, size, &host);
     }
 
     // ── Input ───────────────────────────────────────────────────────────────
