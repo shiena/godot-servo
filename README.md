@@ -505,6 +505,12 @@ If you don't need the GPU path, `web-servo-godot` still surfaces more of Servo's
 history, focus, favicon, fullscreen, permission and authentication requests, and the file, colour
 and context-menu pickers. Note it states no license, so it is all-rights-reserved by default.
 
+## Contributing
+
+Commits follow Conventional Commits, because the release notes are generated from them and
+anything else is dropped. [CONTRIBUTING.md](CONTRIBUTING.md) has the types, the scopes and
+what to run before pushing.
+
 ## License
 
 Licensed under either of [Apache License 2.0](LICENSE-APACHE) or

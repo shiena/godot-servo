@@ -190,7 +190,10 @@ jobs:
           if git diff --cached --quiet; then
             echo "Already at ${{ needs.prepare.outputs.version }}; nothing to commit."
           else
-            git commit -m "Release ${{ needs.prepare.outputs.version }}"
+            # Conventional Commits, like every other commit here, so that
+            # .github/cliff.toml's parser can recognise and skip it: it is the
+            # release, not a change within it.
+            git commit -m "chore(release): ${{ needs.prepare.outputs.version }}"
             git push origin main
           fi
 
@@ -245,11 +248,22 @@ jobs:
           zip -r "$NAME.zip" "$NAME"
           echo "DEMO_ARCHIVE=$NAME.zip" >> "$GITHUB_ENV"
 
+      # `--unreleased --tag` rather than `--latest`: the tag does not exist yet,
+      # because `gh release create` below is what makes it. `--latest` would
+      # resolve to the previous release and describe that one instead.
+      - name: Generate the changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: .github/cliff.toml
+          args: --unreleased --tag ${{ needs.prepare.outputs.version }} --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ needs.prepare.outputs.version }}" \
             --title "${{ needs.prepare.outputs.version }}" \
-            --generate-notes \
+            --notes-file CHANGELOG.md \
             "$ARCHIVE" "$DEMO_ARCHIVE"

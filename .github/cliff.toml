@@ -1,0 +1,51 @@
+# git-cliff, which turns the commits since the last tag into the release notes.
+# Driven from the "Generate changelog" step in .github/workflows/release.yaml.
+#
+# It reads Conventional Commits and nothing else: `filter_unconventional` drops
+# anything without a `type:` prefix, so a commit that does not follow the
+# convention is silently absent from the release notes. See CONTRIBUTING.md.
+
+[changelog]
+header = ""
+# The `<!-- n -->` in each group name is a sort key, because `group_by` orders
+# alphabetically otherwise and puts Bug Fixes above Features. `striptags`
+# removes it again on the way out.
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+## {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
+{{ commit.message | split(pat="\n") | first | trim }}\
+{% endfor %}
+
+{% endfor %}
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+
+commit_parsers = [
+    { message = "^feat", group = "<!-- 0 -->Features" },
+    { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
+    { message = "^perf", group = "<!-- 2 -->Performance" },
+    { message = "^refactor", group = "<!-- 3 -->Refactoring" },
+    { message = "^doc", group = "<!-- 4 -->Documentation" },
+    { message = "^test", group = "<!-- 5 -->Testing" },
+    { message = "^ci", group = "<!-- 6 -->CI/CD" },
+    { message = "^style", group = "<!-- 7 -->Style" },
+    # The version bump the release workflow pushes. It is the release, not a
+    # change within it.
+    { message = "^chore\\(release\\)", skip = true },
+    { message = "^chore", group = "<!-- 8 -->Miscellaneous" },
+]
+
+filter_commits = false
+tag_pattern = "v[0-9].*"
+skip_tags = ""
+ignore_tags = ""
+topo_order = false
+sort_commits = "oldest"

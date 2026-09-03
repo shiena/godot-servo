@@ -499,6 +499,12 @@ GPU 経路が要らないなら、`web-servo-godot` のほうが Servo の埋め
 ファイル・色・コンテキストメニューのピッカー)。
 ただしライセンスの記載が無いため、既定では著作権者に全権が留保されている扱いになります。
 
+## コントリビュート
+
+コミットは Conventional Commits に従います。リリースノートがコミットから生成され、
+従っていないものは落とされるためです。型・スコープ・push 前に走らせるものは
+[CONTRIBUTING.md](CONTRIBUTING.md) にあります。
+
 ## ライセンス
 
 [Apache License 2.0](LICENSE-APACHE) と [MIT license](LICENSE-MIT) のデュアルライセンスです。

@@ -14,6 +14,8 @@
 
 # Local working files
 *.log
+# git-cliff writes this during a release; the notes live on the release itself.
+/CHANGELOG.md
 # Local settings written by Godot version managers
 .godotrc
 /httpd.log
