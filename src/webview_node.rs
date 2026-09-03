@@ -426,10 +426,18 @@ impl ServoWebView {
         // ones there, and the canvas renderer's `glMapBufferRange` then fails and
         // is memcpy'd into unchecked.
         let host = HostContext::capture();
-        if let Err(error) = inner.context.recreate_surface(size) {
-            godot_error!("godot-servo: could not resize the rendering surface: {error:?}");
-            return;
-        }
+        // Servo drives the resize, and the surface is not recreated here first.
+        // `WebView::resize()` reaches the compositor, which starts with
+        //
+        //     if self.rendering_context.size() == new_size { return; }
+        //
+        // and only past that point does it move the webviews' rects, set the
+        // document view, resend the root display list and ask for a repaint.
+        // Recreating the surface here would satisfy that check with the new size
+        // and skip all of it, leaving a bigger surface with the page still laid
+        // out for the old viewport, drawn into one corner of it. The call is
+        // synchronous and reaches `RenderingContext::resize()` on the way, so the
+        // surface really is the new size by the time this returns.
         inner.webview.resize(size);
         // The surface changed, so rebuild the texture bridge too.
         inner.bridge.release(&inner.context);
