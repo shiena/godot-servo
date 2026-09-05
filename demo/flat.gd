@@ -20,8 +20,23 @@ const WebAssets = preload("res://demo/web_assets.gd")
 
 func _ready() -> void:
 	# The node starts with autostart off, so the URL can be set first.
-	browser.url = WebAssets.page_url("index")
+	browser.url = _local_page_url()
+	# Investigation branch. The preference is process-wide and Servo reads it once,
+	# so it has to be set before the first start, not when the page asks for it.
+	browser.enable_webgpu = browser.url.contains("webgpu")
 	browser.start()
+
+
+## Decides which page to open. `-- --page webgl` switches it, as in the 3D demo.
+## Only the investigation branch needs it here: this is the scene whose view
+## follows its control's size, so it is the one that reaches `set_view_size_px()`.
+func _local_page_url() -> String:
+	var page := "index"
+	var args := OS.get_cmdline_user_args()
+	var index := args.find("--page")
+	if index >= 0 and index + 1 < args.size():
+		page = args[index + 1]
+	return WebAssets.page_url(page)
 
 
 func _on_load_finished() -> void:
