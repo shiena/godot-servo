@@ -20,6 +20,9 @@ const WebAssets = preload("res://demo/web_assets.gd")
 func _ready() -> void:
 	# The node starts with autostart off, so the URL can be set first.
 	browser.url = _local_page_url()
+	# Investigation branch. The preference is process-wide and Servo reads it once,
+	# so it has to be set before the first start, not when the page asks for it.
+	browser.enable_webgpu = browser.url.contains("webgpu")
 	browser.start()
 
 

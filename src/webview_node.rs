@@ -71,6 +71,16 @@ pub struct ServoWebView {
     #[init(val = true)]
     enable_webgl2: bool,
 
+    /// Enable WebGPU. Servo has it off by default, and so is this.
+    ///
+    /// Only on the investigation branch, where `Cargo.toml` builds Servo with
+    /// the `webgpu` feature. Turning it on makes `navigator.gpu` appear and the
+    /// process crash: always when presenting to a canvas, and on teardown even
+    /// without one.
+    #[export]
+    #[init(val = false)]
+    enable_webgpu: bool,
+
     /// Where to put the IME candidate window, in window coordinates.
     ///
     /// The caret position inside the WebView cannot be used as it is: on a 3D
@@ -252,9 +262,10 @@ impl ServoWebView {
         let waker = GodotWaker::new();
         let servo = servo_instance::acquire(&waker);
 
-        // Off by default in Servo. The preference is process-wide, so the first
-        // node to start decides it.
+        // Both off by default in Servo. The preferences are process-wide, so the
+        // first node to start decides them.
         servo.set_preference("dom_webgl2_enabled", PrefValue::Bool(self.enable_webgl2));
+        servo.set_preference("dom_webgpu_enabled", PrefValue::Bool(self.enable_webgpu));
 
         let user_content = Rc::new(UserContentManager::new(&servo));
         user_content.add_script(Rc::new(UserScript::new(BRIDGE_SCRIPT.to_owned(), None)));

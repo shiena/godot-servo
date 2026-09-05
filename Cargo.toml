@@ -9,10 +9,15 @@ crate-type = ["cdylib"]
 
 [dependencies]
 godot = { version = "0.5.5", features = ["api-4-4"] }
-# The webgpu feature is left out. WebGPU in Servo 0.5.0 segfaults the process in
-# this embedding, and enabling it also pulls all of wgpu and naga into the binary.
-# See the "Not supported" section of the README.
-servo = "0.5.0"
+# The webgpu feature is ON for this branch only, to find out why Servo 0.5.0's
+# WebGPU segfaults this embedding. It is off on main: it pulls all of wgpu and
+# naga into the binary. See the "Not supported" section of the README.
+#
+# The build fails as shipped. ipc-channel requires `windows ^0.61`, which drags
+# gpu-allocator (`windows >=0.53, <=0.62`) down to 0.61 and breaks the types it
+# shares with wgpu-hal, which requires 0.62. `cargo update -p gpu-allocator`
+# moves it back up; the lockfile on this branch already has that.
+servo = { version = "0.5.0", features = ["webgpu"] }
 surfman = { version = "0.13.0", features = ["chains"] }
 # Only ever used against the device Godot already created. `Entry::load()` opens
 # the platform's Vulkan loader, which every target but macOS has one of: the ICD
@@ -76,4 +81,10 @@ libc = "0.2"
 # changes nothing, because MSVC keeps debug info in the .pdb rather than the DLL.
 # Debug builds keep their symbols.
 [profile.release]
-strip = true
+# Investigation branch: keep the symbols. `strip = true` is what main ships, and
+# on its own it is not what decides this on Windows — cargo's release default is
+# `debug = false`, so the linker is never asked for a .pdb and there is nothing
+# to strip. Line tables are enough to name the frames and lines of a crash, and
+# cost a fraction of what full debug info does in disk and link time.
+strip = false
+debug = "line-tables-only"
