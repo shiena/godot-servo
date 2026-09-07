@@ -9,10 +9,30 @@ crate-type = ["cdylib"]
 
 [dependencies]
 godot = { version = "0.5.5", features = ["api-4-4"] }
-# The webgpu feature is left out. WebGPU in Servo 0.5.0 segfaults the process in
-# this embedding, and enabling it also pulls all of wgpu and naga into the binary.
-# See the "Not supported" section of the README.
-servo = "0.5.0"
+# Servo comes from a fork rather than crates.io. This branch carries the fixes for
+# the two upstream bugs that stop WebGPU working in this embedding, and neither is
+# in a release yet:
+#
+#   servo/servo#47840  Servo never shuts its WebGPU thread down. handle_shutdown
+#                      looks for the channels in the browsing context group that
+#                      closing the last webview already removed, so no Exit is
+#                      sent. Godot then unloads this library with the poller still
+#                      running in it, and the process takes an access violation.
+#   servo/servo#47584  SpiderMonkey boxes a pointer in 47 bits and Android tags the
+#                      top byte, so PrivateValue asserts before a page loads. The
+#                      allocator section below is the answer to that one.
+#
+# The rev is servo main at b422215605b811a4e6d0f196fb4599c7ea277301 plus the two
+# commits for #47840; Cargo.lock pins it. Enabling webgpu also pulls all of wgpu
+# and naga into the binary. See the README.
+#
+# Every cargo command prints `error: invalid type: boolean `true`, expected a map`
+# while it scans the checkout. That is servo's own
+# python/tidy/tests/lints-configuration/no-workspace/Cargo.toml, a fixture that is
+# meant to be invalid. cargo carries on and exits 0; there is nothing to fix.
+servo = { git = "https://github.com/shiena/servo", rev = "831751a5698296c5131eae60f44f4a867c44e833", features = [
+  "webgpu",
+] }
 surfman = { version = "0.13.0", features = ["chains"] }
 # Only ever used against the device Godot already created. `Entry::load()` opens
 # the platform's Vulkan loader, which every target but macOS has one of: the ICD
@@ -34,7 +54,7 @@ log = "0.4"
 # set ("Do not know how to build EGL support for a non-Windows platform."). Cargo
 # allows the same dependency per target, and features are only unified when the
 # target matches.
-servo = { version = "0.5.0", features = ["no-wgl"] }
+servo = { git = "https://github.com/shiena/servo", rev = "831751a5698296c5131eae60f44f4a867c44e833", features = ["no-wgl"] }
 surfman = { version = "0.13.0", features = ["sm-angle-default"] }
 
 windows = { version = "0.62", features = [
@@ -48,6 +68,24 @@ windows = { version = "0.62", features = [
 ] }
 wio = "0.2"
 winapi = { version = "0.3", features = ["d3d11"] }
+
+# servo/servo#47584: keep jemalloc, which 0.5.0 chose on its own.
+#
+# servo-allocator stopped choosing it in servo/servo#44032, where the feature
+# became opt-in. On Android that is the difference between a page loading and a
+# panic: the system allocator tags the top byte of every heap pointer, SpiderMonkey
+# leaves 47 bits for one, and PrivateValue asserts. jemalloc serves from its own
+# mappings, which are untagged. The alternative is
+# android:allowNativeHeapPointerTagging="false" in the app's manifest, which turns
+# off Scudo's use-after-free detection for the whole process.
+#
+# The git and rev match servo above so cargo unifies the feature with the copy
+# servo already pulls in rather than resolving a second one. The cfg is
+# servo-allocator's own: it has no jemalloc to offer on the other two.
+[target.'cfg(not(any(windows, target_env = "ohos")))'.dependencies]
+servo-allocator = { git = "https://github.com/shiena/servo", rev = "831751a5698296c5131eae60f44f4a867c44e833", features = [
+  "use-jemalloc",
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Build jemalloc with a TLS model that can be dlopen'd.
@@ -77,3 +115,8 @@ libc = "0.2"
 # Debug builds keep their symbols.
 [profile.release]
 strip = true
+
+# Servo's own workspace carries this, and a git dependency does not inherit it.
+# Without it servo-script's rlib passes 4GB and fails to link on Windows.
+[profile.dev.package.servo-script]
+codegen-units = 16

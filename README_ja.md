@@ -385,6 +385,30 @@ scripts/build.ps1 -Run -Page http://127.0.0.1:8731/three.html
 
 `-Page` は `res://demo/web/<名前>.html` を開きます。`http` で始まる文字列はそのまま URL として扱います。
 
+## WebGPU
+
+このブランチでは WebGPU を有効にしています。描画結果は WebGL と同じ共有テクスチャに乗ります。
+確認用のページは `demo/web/webgpu.html` と `webgpu-compute.html` です。
+
+まだリリースに入っていない上流の修正が 2 つ要るので、`Cargo.toml` は crates.io ではなく
+フォークのコミットを固定して参照しています。servo/servo#47840 は Servo の終了後も WebGPU の
+スレッドが残る問題で、その状態で Godot がこのライブラリを外すため、Windows ではアクセス違反で
+プロセスが終わります。servo/servo#47584 は Android での panic で、こちらは jemalloc を使い続ける
+ことで避けています。「jemalloc を指定する理由と、Linux でビルドし直す理由」を参照してください。
+
+**`file://` のページからは WebGPU を使えません。** `Constellation::handle_wgpu_request` は
+`registered_domain_name` で要求元のホストを引きますが、`file://` のような opaque origin には
+ホストがないので、要求は送信元に返事をしないまま捨てられます。その間 `navigator.gpu` は存在し続け、
+`requestAdapter()` は解決も拒否もせずに止まります。ページはサーバから配信してください。
+
+```sh
+( cd demo/web && python -m http.server 8731 --bind 127.0.0.1 & )
+scripts/build.ps1 -Run -Page http://127.0.0.1:8731/webgpu-compute.html
+```
+
+`webgpu` を有効にすると wgpu と naga も抱き込み、ただでさえ大きいバイナリがさらに膨らみます。
+main でフィーチャを切ってあるのはこのためです。
+
 ## 設計メモ
 
 ### シングルバッファ
@@ -459,21 +483,22 @@ Godot 所有のテクスチャへコピーし、そちらを表示します。�
 1280×720 の release ビルドで、1 フレームあたりの更新が 1.93 ms から 1.34 ms になり、
 毎フレームの確保 約 7 MB と全画面 1 回分のコピーが消えます。
 
-### Linux で jemalloc をビルドし直す理由
+### jemalloc を指定する理由と、Linux でビルドし直す理由
 
-Servo は `servo-allocator` を通じて jemalloc を取り込みますが、jemalloc は既定で initial-exec TLS を
-使います。これは共有オブジェクトに `STATIC_TLS` を立て、`PT_TLS` を glibc の静的 TLS 予備領域 (static TLS surplus) の外へ
+`servo-allocator` は以前、Windows と OpenHarmony OS 以外では自分で jemalloc を選んでいましたが、
+servo/servo#44032 でフィーチャ扱いになりました。そこで `Cargo.toml` でこのクレートを名指しして
+`use-jemalloc` を有効にしています。Android ではこの選択がページを開けるかどうかを分けます。
+システムアロケータはヒープのポインタの最上位バイトにタグを付けますが、SpiderMonkey が
+boxed value でポインタに使えるのは 47 ビットなので、`PrivateValue` が assert に引っかかります
+(servo/servo#47584)。jemalloc は自前のマッピングから返すため、タグが付きません。
+
+その jemalloc は既定で initial-exec TLS を使います。これは共有オブジェクトに `STATIC_TLS` を立て、`PT_TLS` を glibc の静的 TLS 予備領域 (static TLS surplus) の外へ
 押し出すので、Godot が `dlopen` できなくなります。そこで `Cargo.toml` では Linux に限って
-`tikv-jemalloc-sys` を直接宣言し、まさにこの事態のために用意されている
+`tikv-jemalloc-sys` も直接宣言し、まさにこの事態のために用意されている
 `disable_initial_exec_tls` フィーチャを有効にしています。
 
 ## 対応していないもの
 
-- **WebGPU。** Servo の実装がこの組み込み方だとクラッシュします。デバイスの作成もコンピュートシェーダも
-  動きますが、canvas に表示した時点で必ず、canvas を使わなくても終了時に SIGSEGV で落ちます。
-  `webgpu` フィーチャは切ってあります。有効にすると wgpu と naga も抱き込み、ただでさえ大きい
-  バイナリがさらに膨らみます。将来の再確認用に `demo/web/webgpu.html` と `webgpu-compute.html` を
-  置いてあります。
 - **シーンの色を読むこと。** CSS の `backdrop-filter` でページの後ろのゲーム画面をぼかす用途です。
   Godot 側は `CompositorEffect` で足りますが、Servo 側は `WebRenderImageHandlerType` を足した
   フォークが要ります。

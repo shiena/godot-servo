@@ -71,6 +71,17 @@ pub struct ServoWebView {
     #[init(val = true)]
     enable_webgl2: bool,
 
+    /// Enable WebGPU. Servo has it off by default.
+    ///
+    /// On by default here, because this branch builds Servo with the `webgpu`
+    /// feature on purpose and the binary carries wgpu either way. Servo starts
+    /// the WebGPU thread on the first request, so a page that never asks for an
+    /// adapter pays nothing for this. Note that a `file://` page cannot use
+    /// WebGPU at all; see the README.
+    #[export]
+    #[init(val = true)]
+    enable_webgpu: bool,
+
     /// Where to put the IME candidate window, in window coordinates.
     ///
     /// The caret position inside the WebView cannot be used as it is: on a 3D
@@ -252,9 +263,10 @@ impl ServoWebView {
         let waker = GodotWaker::new();
         let servo = servo_instance::acquire(&waker);
 
-        // Off by default in Servo. The preference is process-wide, so the first
-        // node to start decides it.
+        // Both off by default in Servo. The preferences are process-wide and are
+        // read once at startup, so the first node to start decides them.
         servo.set_preference("dom_webgl2_enabled", PrefValue::Bool(self.enable_webgl2));
+        servo.set_preference("dom_webgpu_enabled", PrefValue::Bool(self.enable_webgpu));
 
         let user_content = Rc::new(UserContentManager::new(&servo));
         user_content.add_script(Rc::new(UserScript::new(BRIDGE_SCRIPT.to_owned(), None)));
@@ -765,9 +777,9 @@ impl ServoWebView {
         }
 
         let button = match index {
-            GodotMouseButton::LEFT => MouseButton::Left,
-            GodotMouseButton::RIGHT => MouseButton::Right,
-            GodotMouseButton::MIDDLE => MouseButton::Middle,
+            GodotMouseButton::LEFT => MouseButton::Primary,
+            GodotMouseButton::RIGHT => MouseButton::Secondary,
+            GodotMouseButton::MIDDLE => MouseButton::Auxiliary,
             GodotMouseButton::XBUTTON1 => MouseButton::Back,
             GodotMouseButton::XBUTTON2 => MouseButton::Forward,
             _ => return,

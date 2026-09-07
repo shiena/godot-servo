@@ -394,6 +394,31 @@ scripts/build.ps1 -Run -Page http://127.0.0.1:8731/three.html
 
 `-Page` opens `res://demo/web/<name>.html`. A value starting with `http` is used as a URL.
 
+## WebGPU
+
+WebGPU is on for this branch, and its output lands on the same shared texture as WebGL.
+`demo/web/webgpu.html` and `webgpu-compute.html` are the check pages.
+
+It needs two upstream fixes that are not in a release, so `Cargo.toml` takes Servo from a fork at a
+pinned commit rather than from crates.io. servo/servo#47840 leaves the WebGPU thread running after
+Servo shuts down, and Godot then unloads this library out from under it, which ends the process in
+an access violation on Windows. servo/servo#47584 is a panic on Android, answered here by keeping
+jemalloc; see "Why jemalloc is asked for, and rebuilt on Linux".
+
+**A `file://` page cannot use WebGPU.** `Constellation::handle_wgpu_request` asks
+`registered_domain_name` for the requesting page's host, and an opaque origin — which is what a
+`file://` page has — has none, so the request is dropped without answering its sender.
+`navigator.gpu` is there the whole time and `requestAdapter()` never settles: it does not reject, it
+hangs. Serve the pages instead.
+
+```sh
+( cd demo/web && python -m http.server 8731 --bind 127.0.0.1 & )
+scripts/build.ps1 -Run -Page http://127.0.0.1:8731/webgpu-compute.html
+```
+
+Enabling `webgpu` pulls all of wgpu and naga into an already large binary, which is why main leaves
+the feature off.
+
 ## Design notes
 
 ### Single buffering
@@ -468,19 +493,22 @@ straight in what becomes the texture's contents. Two sets are enough because a t
 At 1280×720 in a release build, that takes the per-frame update from 1.93 ms to 1.34 ms, and removes
 about 7 MB of allocation and one full-frame copy per frame.
 
-### Why jemalloc is rebuilt on Linux
+### Why jemalloc is asked for, and rebuilt on Linux
 
-Servo pulls jemalloc in through `servo-allocator`, and jemalloc defaults to initial-exec TLS. That
-sets `STATIC_TLS` on the shared object and pushes `PT_TLS` past glibc's static TLS surplus, so Godot
-cannot `dlopen` it. `Cargo.toml` therefore declares `tikv-jemalloc-sys` directly on Linux with
-`disable_initial_exec_tls`, the feature that crate ships for exactly this case.
+`servo-allocator` used to choose jemalloc for itself on everything but Windows and OpenHarmony OS.
+servo/servo#44032 turned that into a feature, so `Cargo.toml` now names the crate and enables
+`use-jemalloc`. On Android the choice decides whether a page loads at all: the system allocator tags
+the top byte of every heap pointer, SpiderMonkey leaves 47 bits for one in a boxed value, and
+`PrivateValue` asserts (servo/servo#47584). jemalloc serves from its own mappings, which carry no
+tag.
+
+jemalloc in turn defaults to initial-exec TLS. That sets `STATIC_TLS` on the shared object and
+pushes `PT_TLS` past glibc's static TLS surplus, so Godot cannot `dlopen` it. `Cargo.toml`
+therefore also declares `tikv-jemalloc-sys` directly on Linux with `disable_initial_exec_tls`, the
+feature that crate ships for exactly this case.
 
 ## Not supported
 
-- **WebGPU.** Servo's implementation crashes this embedding: device creation and compute shaders
-  work, but the process dies with SIGSEGV, always when presenting to a canvas and on teardown even
-  without one. The `webgpu` feature is off, and enabling it also pulls wgpu and naga into an already
-  large binary. `demo/web/webgpu.html` and `webgpu-compute.html` are there for a future retest.
 - **Scene color feedback**, for blurring the game behind the page with CSS `backdrop-filter`.
   `CompositorEffect` covers the Godot side, but the Servo side needs a fork that adds a
   `WebRenderImageHandlerType`.
