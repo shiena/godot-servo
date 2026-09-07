@@ -99,6 +99,9 @@ a claim where a resolved function is a fact.
   `get_driver_resource()` reached GDExtension in 4.4.
 - **Rust 1.94 or later**, to build from source.
 - For Android, **cargo-ndk** and an NDK, on a Linux or macOS host.
+- On Windows, **`git config --global core.longpaths true`**. `Cargo.toml` takes Servo from git, and
+  cargo clones the whole repository, where `tests/wpt` holds paths past `MAX_PATH`. Without this the
+  build stops at `path too long: ...; class=Filesystem (30)` before it compiles anything.
 
 ## Repository layout
 

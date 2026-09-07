@@ -95,6 +95,10 @@ Godot で GPU メモリを共有できます。dma-buf や `AHardwareBuffer` の
   `get_driver_resource()` が GDExtension に出たのが 4.4 です。
 - ソースからビルドするなら **Rust 1.94 以降**。
 - Android 向けには **cargo-ndk** と NDK、そして Linux か macOS のホスト。
+- Windows では **`git config --global core.longpaths true`**。`Cargo.toml` が Servo を
+  git から取得するため cargo がリポジトリ全体をクローンしますが、`tests/wpt` に
+  `MAX_PATH` を超えるパスがあります。これがないとコンパイルに入る前に
+  `path too long: ...; class=Filesystem (30)` で止まります。
 
 ## リポジトリの構成
 

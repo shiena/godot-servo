@@ -45,6 +45,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # cargo clones the whole Servo repository for the git dependency, and
+      # tests/wpt holds paths past MAX_PATH. libgit2 reaches them only when git
+      # is configured to, and a fresh runner is not. Without this the checkout
+      # fails with `path too long: ...; class=Filesystem (30)`.
+      - name: Let git handle long paths
+        run: git config --global core.longpaths true
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
