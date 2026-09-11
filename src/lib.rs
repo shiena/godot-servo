@@ -20,6 +20,7 @@
 //! readback where it is absent; Linux and Android need nothing Godot does not
 //! already enable. [`bridge::vulkan::caps`] has the detail.
 
+use godot::init::InitStage;
 use godot::prelude::*;
 
 pub mod angle_loader;
@@ -27,6 +28,7 @@ pub mod bridge;
 pub mod delegate;
 pub mod gl_guard;
 pub mod rendering_context;
+pub mod servo_server;
 pub mod waker;
 pub mod webview_node;
 
@@ -38,4 +40,16 @@ use tikv_jemalloc_sys as _;
 struct GodotServo;
 
 #[gdextension]
-unsafe impl ExtensionLibrary for GodotServo {}
+unsafe impl ExtensionLibrary for GodotServo {
+    fn on_stage_init(stage: InitStage) {
+        if stage == InitStage::Scene {
+            servo_server::register();
+        }
+    }
+
+    fn on_stage_deinit(stage: InitStage) {
+        if stage == InitStage::Scene {
+            servo_server::unregister();
+        }
+    }
+}

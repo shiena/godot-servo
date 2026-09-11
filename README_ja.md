@@ -343,7 +343,7 @@ JavaScript を書かず、ただのリンクでも送れます。
 
 | | |
 | --- | --- |
-| `url`, `view_size`, `autostart`, `enable_webgl2`, `ime_anchor` | エクスポートされたプロパティ |
+| `url`, `view_size`, `autostart`, `ime_anchor` | エクスポートされたプロパティ |
 | `start()`, `stop()`, `is_running()` | ライフサイクル |
 | `get_texture()`, `is_texture_flipped_v()`, `needs_external_sampler()`, `get_backend_name()` | 表示 |
 | `load_url()`, `reload()`, `go_back()`, `go_forward()` | ナビゲーション |
@@ -358,6 +358,27 @@ JavaScript を書かず、ただのリンクでも送れます。
 `ime_dismissed`, `crashed`, `dialog_alert`, `dialog_confirm`, `dialog_prompt`,
 `select_element_requested`
 
+### ServoServer
+
+`ServoServer` は、プロセスに 1 つだけの Servo を持つエンジンシングルトンです。
+Servo はプロセスごとに一度しか作れないので、最初の `ServoWebView` が開始したときに作り、
+ゲームが終了するまで保持します。`ServoWebView` はシーンと一緒に作られたり消えたりしますが、Servo は残ります。
+
+| | |
+| --- | --- |
+| `enable_webgl2` | WebGL 2.0 を有効にする。既定は有効 |
+
+設定は Servo を作るときに 1 回だけ読みます。それ以降に変更しようとすると、値は変わらず警告が出ます。
+最初の `ServoWebView` が開始する前に設定してください。autoload から設定するか、
+そのノードが `autostart` を使っている場合はシーン内のどの `_ready()` からでも設定できます。
+`autostart` は、シーン全体の準備が終わった後にノードを開始します。
+
+```gdscript
+# autoload
+func _init() -> void:
+    ServoServer.enable_webgl2 = false
+```
+
 ## WebGL
 
 WebGL の描画結果も同じ共有テクスチャに乗ります。確認用のページが `demo/web/` にあります。
@@ -371,7 +392,7 @@ WebGL の描画結果も同じ共有テクスチャに乗ります。確認用�
 
 ![WebGL 2.0 で描画した three.js 0.180](shot_three.png)
 
-Servo は WebGL 2 を既定で無効にしているので、`ServoWebView` は `dom_webgl2_enabled` を設定する
+Servo は WebGL 2 を既定で無効にしているので、`ServoServer` は `dom_webgl2_enabled` を設定する
 `enable_webgl2` を持っています。最新の three.js が WebGL 2 を要求するため、既定は有効です。
 
 ```sh

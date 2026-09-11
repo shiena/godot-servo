@@ -1,9 +1,8 @@
 //! `ServoWebView`, the node Godot sees.
 //!
-//! One node corresponds to one Servo `WebView`. There is a single `Servo`
-//! instance per process, shared by every node.
+//! One node corresponds to one Servo `WebView`. The `Servo` behind them all
+//! belongs to `ServoServer`, which also pumps it.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use dpi::PhysicalSize;
@@ -17,16 +16,16 @@ use godot::prelude::*;
 use servo::{
     Code, CompositionEvent, CompositionState, DevicePoint, ImeEvent, InputEvent as ServoInputEvent,
     JSValue, JavaScriptEvaluationError, Key, KeyState, KeyboardEvent, Location, Modifiers,
-    MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, PrefValue, Servo,
-    ServoBuilder, TouchEvent, TouchEventType, TouchId, TouchPointerType, UserContentManager,
-    UserScript, WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode,
+    MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, TouchEvent, TouchEventType,
+    TouchId, TouchPointerType, UserContentManager, UserScript, WebView, WebViewBuilder, WheelDelta,
+    WheelEvent, WheelMode,
 };
 
 use crate::bridge::{self, TextureBridge};
 use crate::delegate::{ServoEvent, ServoEventSink, BRIDGE_SCRIPT};
 use crate::gl_guard::HostContext;
 use crate::rendering_context::GodotRenderingContext;
-use crate::waker::GodotWaker;
+use crate::servo_server::ServoServer;
 
 /// Pixels per wheel notch, matching the value servoshell uses.
 const WHEEL_LINE_HEIGHT: f64 = 76.0;
@@ -37,11 +36,9 @@ const WHEEL_LINE_HEIGHT: f64 = 76.0;
 const DEVICE_ID_EMULATION: i32 = -1;
 
 struct Inner {
-    servo: Servo,
     webview: WebView,
     context: Rc<GodotRenderingContext>,
     sink: Rc<ServoEventSink>,
-    waker: GodotWaker,
     bridge: Box<dyn TextureBridge>,
     _user_content: Rc<UserContentManager>,
 }
@@ -61,15 +58,13 @@ pub struct ServoWebView {
     #[init(val = Vector2i::new(1024, 768))]
     view_size: Vector2i,
 
-    /// Whether to start automatically in `_ready()`.
+    /// Whether to start automatically once the scene is ready.
+    ///
+    /// The start is deferred past `_ready()`, so it comes after every node in
+    /// the scene is ready, and so any of them can still set `ServoServer` up.
     #[export]
     #[init(val = true)]
     autostart: bool,
-
-    /// Enable WebGL 2.0. Servo has it off by default.
-    #[export]
-    #[init(val = true)]
-    enable_webgl2: bool,
 
     /// Where to put the IME candidate window, in window coordinates.
     ///
@@ -82,6 +77,8 @@ pub struct ServoWebView {
     ime_anchor: Vector2,
 
     inner: Option<Inner>,
+    /// `autostart` queued a start that `start()` or `stop()` has not overtaken.
+    autostart_pending: bool,
     next_script_id: i64,
     /// Answers to `evaluate_javascript()` calls made while nothing was running.
     /// They cannot go on the sink's queue, which lives in `Inner`, so they wait
@@ -105,7 +102,15 @@ pub struct ServoWebView {
 impl INode for ServoWebView {
     fn ready(&mut self) {
         if self.autostart {
-            self.start();
+            self.autostart_pending = true;
+            self.run_deferred_gd(|mut this| {
+                if this.is_instance_valid() {
+                    let mut this = this.bind_mut();
+                    if std::mem::take(&mut this.autostart_pending) {
+                        this.start();
+                    }
+                }
+            });
         }
     }
 
@@ -225,9 +230,14 @@ impl ServoWebView {
 
     #[func]
     fn start(&mut self) {
+        self.autostart_pending = false;
         if self.inner.is_some() {
             return;
         }
+        let Some(mut server) = ServoServer::singleton() else {
+            godot_error!("godot-servo: ServoServer is not registered");
+            return;
+        };
         let size = self.physical_size();
 
         // Load ANGLE from beside the extension before surfman goes looking for it.
@@ -249,12 +259,7 @@ impl ServoWebView {
             return;
         }
 
-        let waker = GodotWaker::new();
-        let servo = servo_instance::acquire(&waker);
-
-        // Off by default in Servo. The preference is process-wide, so the first
-        // node to start decides it.
-        servo.set_preference("dom_webgl2_enabled", PrefValue::Bool(self.enable_webgl2));
+        let servo = server.bind_mut().attach(self.base().instance_id());
 
         let user_content = Rc::new(UserContentManager::new(&servo));
         user_content.add_script(Rc::new(UserScript::new(BRIDGE_SCRIPT.to_owned(), None)));
@@ -277,11 +282,9 @@ impl ServoWebView {
         );
 
         self.inner = Some(Inner {
-            servo,
             webview,
             context,
             sink,
-            waker,
             bridge,
             _user_content: user_content,
         });
@@ -289,20 +292,37 @@ impl ServoWebView {
 
     #[func]
     fn stop(&mut self) {
+        self.autostart_pending = false;
         if self.ime_active {
             self.set_ime_enabled(false);
         }
-        if let Some(mut inner) = self.inner.take() {
-            // Same rule as `start()` and `set_view_size_px()`: capture before the
-            // first thing that makes Servo's context current. Tearing down is no
-            // exception — `release()` deletes GL objects through Servo's context,
-            // and dropping Servo destroys it, so without this Godot is left
-            // rendering against a context that is first wrong and then gone.
-            let _host_context = HostContext::capture();
-            inner.bridge.release(&inner.context);
-            drop(inner.webview);
-            drop(inner.servo);
-            servo_instance::release();
+        if let Some(inner) = self.inner.take() {
+            let Inner {
+                webview,
+                context,
+                sink,
+                mut bridge,
+                _user_content,
+            } = inner;
+            {
+                // Same rule as `start()` and `set_view_size_px()`: capture before
+                // the first thing that makes Servo's context current. Tearing down
+                // is no exception — `release()` deletes GL objects through Servo's
+                // context. Dropping the last handle on that context destroys it,
+                // which leaves no context current at all, so that happens in here
+                // too, before Godot's is put back.
+                let _host_context = HostContext::capture();
+                bridge.release(&context);
+                drop(webview);
+                drop(context);
+            }
+            // The bridge holds Godot's texture, and freeing that is a GL call on
+            // Godot's context, which is current again by now.
+            drop(bridge);
+            drop(sink);
+            if let Some(mut server) = ServoServer::singleton() {
+                server.bind_mut().detach(self.base().instance_id());
+            }
         }
     }
 
@@ -846,7 +866,16 @@ impl ServoWebView {
         ));
     }
 
-    /// The per-frame work: pump Servo, repaint when needed, emit what queued up.
+    /// What has to reach Servo before `ServoServer` spins it this frame.
+    ///
+    /// Input handling finished before `process_frame`, so the committed text is
+    /// complete by now.
+    pub(crate) fn before_spin(&mut self) {
+        self.flush_commit();
+    }
+
+    /// The per-frame work after `ServoServer` has spun Servo: repaint when
+    /// needed, emit what queued up.
     fn pump(&mut self) {
         // Owed to callers whose evaluation never reached Servo. Emitted whether
         // or not the node is running, since nothing else will deliver them.
@@ -856,24 +885,13 @@ impl ServoWebView {
                 .emit(id, &Variant::nil(), &GString::from(&error));
         }
 
-        if self.inner.is_none() {
-            return;
-        }
-        // Input handling finished before this frame's `_process`, so the committed
-        // text is complete by now.
-        self.flush_commit();
-
         let Some(inner) = self.inner.as_ref() else {
             return;
         };
 
         // Only for as long as Servo borrows the GL context; Godot's is restored on
-        // the way out. `spin_event_loop()` touches GL too, so capture before it.
+        // the way out.
         let _host_context = HostContext::capture();
-
-        // Servo wakes us from its own threads; do not drop those requests.
-        inner.waker.take_pending();
-        inner.servo.spin_event_loop();
 
         let repaint = inner.sink.take_dirty();
         let events = inner.sink.drain();
@@ -1120,51 +1138,6 @@ fn js_value_to_variant(value: JSValue) -> Variant {
                 dictionary.set(&GString::from(&key), &js_value_to_variant(value));
             }
             dictionary.to_variant()
-        }
-    }
-}
-
-/// One `Servo` per process, shared by every `ServoWebView`.
-mod servo_instance {
-    use super::*;
-
-    thread_local! {
-        static INSTANCE: RefCell<Option<Servo>> = const { RefCell::new(None) };
-        static REFCOUNT: RefCell<usize> = const { RefCell::new(0) };
-    }
-
-    pub fn acquire(waker: &GodotWaker) -> Servo {
-        REFCOUNT.with(|count| *count.borrow_mut() += 1);
-        INSTANCE.with(|instance| {
-            let mut instance = instance.borrow_mut();
-            instance
-                .get_or_insert_with(|| {
-                    install_crypto_provider();
-                    let servo = ServoBuilder::default()
-                        .event_loop_waker(Box::new(waker.clone()))
-                        .build();
-                    servo.setup_logging();
-                    servo
-                })
-                .clone()
-        })
-    }
-
-    pub fn release() {
-        let remaining = REFCOUNT.with(|count| {
-            let mut count = count.borrow_mut();
-            *count = count.saturating_sub(1);
-            *count
-        });
-        if remaining == 0 {
-            INSTANCE.with(|instance| instance.borrow_mut().take());
-        }
-    }
-
-    /// Servo's network layer assumes a rustls provider has been installed.
-    fn install_crypto_provider() {
-        if rustls::crypto::CryptoProvider::get_default().is_none() {
-            let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         }
     }
 }

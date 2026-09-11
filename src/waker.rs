@@ -2,7 +2,7 @@
 //!
 //! Servo calls `wake()` from its own threads, so all that happens here is
 //! setting a flag. The actual `spin_event_loop()` runs on Godot's main thread,
-//! in `_process`.
+//! from `ServoServer` on `SceneTree::process_frame`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
