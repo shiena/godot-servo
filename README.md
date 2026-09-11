@@ -378,7 +378,8 @@ exits. A `ServoWebView` can come and go with its scene; Servo stays.
 | `enable_webgl2` | Enable WebGL 2.0. On by default |
 
 Settings are read once, when Servo is built. Set one after that and it keeps its value, with a
-warning. Set them before the first `ServoWebView` starts, from an autoload for instance.
+warning. Set them before the first `ServoWebView` starts: from an autoload, or from any `_ready()`
+in the scene when that node uses `autostart`, which starts it after the whole scene is ready.
 
 ```gdscript
 # An autoload

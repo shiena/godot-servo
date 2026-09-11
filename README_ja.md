@@ -369,7 +369,9 @@ Servo はプロセスごとに一度しか作れないので、最初の `ServoW
 | `enable_webgl2` | WebGL 2.0 を有効にする。既定は有効 |
 
 設定は Servo を作るときに 1 回だけ読みます。それ以降に変更しようとすると、値は変わらず警告が出ます。
-最初の `ServoWebView` が開始する前に、autoload などから設定してください。
+最初の `ServoWebView` が開始する前に設定してください。autoload から設定するか、
+そのノードが `autostart` を使っている場合はシーン内のどの `_ready()` からでも設定できます。
+`autostart` は、シーン全体の準備が終わった後にノードを開始します。
 
 ```gdscript
 # autoload

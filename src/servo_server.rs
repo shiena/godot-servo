@@ -7,7 +7,8 @@
 //! any number of scene changes.
 //!
 //! The settings here are read once, when Servo is built. Set them before the
-//! first `ServoWebView` starts, from an autoload for instance.
+//! first `ServoWebView` starts: from an autoload, or from any `_ready()` in the
+//! scene when the node uses `autostart`, which starts it deferred.
 //!
 //! Servo is pumped here as well, once per frame, from `SceneTree::process_frame`.
 //! Godot emits that signal before any node's `_process`, so every node's input
@@ -173,8 +174,8 @@ impl ServoServer {
         }
         godot_warn!(
             "godot-servo: ServoServer.{property} is read once, when Servo starts, and it \
-             already has. Set it before the first ServoWebView starts, from an autoload for \
-             instance."
+             already has. Set it before the first ServoWebView starts: from an autoload, or \
+             from _ready() when the node uses autostart."
         );
         true
     }

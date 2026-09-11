@@ -58,7 +58,10 @@ pub struct ServoWebView {
     #[init(val = Vector2i::new(1024, 768))]
     view_size: Vector2i,
 
-    /// Whether to start automatically in `_ready()`.
+    /// Whether to start automatically once the scene is ready.
+    ///
+    /// The start is deferred past `_ready()`, so it comes after every node in
+    /// the scene is ready, and so any of them can still set `ServoServer` up.
     #[export]
     #[init(val = true)]
     autostart: bool,
@@ -74,6 +77,8 @@ pub struct ServoWebView {
     ime_anchor: Vector2,
 
     inner: Option<Inner>,
+    /// `autostart` queued a start that `start()` or `stop()` has not overtaken.
+    autostart_pending: bool,
     next_script_id: i64,
     /// Answers to `evaluate_javascript()` calls made while nothing was running.
     /// They cannot go on the sink's queue, which lives in `Inner`, so they wait
@@ -97,7 +102,15 @@ pub struct ServoWebView {
 impl INode for ServoWebView {
     fn ready(&mut self) {
         if self.autostart {
-            self.start();
+            self.autostart_pending = true;
+            self.run_deferred_gd(|mut this| {
+                if this.is_instance_valid() {
+                    let mut this = this.bind_mut();
+                    if std::mem::take(&mut this.autostart_pending) {
+                        this.start();
+                    }
+                }
+            });
         }
     }
 
@@ -217,6 +230,7 @@ impl ServoWebView {
 
     #[func]
     fn start(&mut self) {
+        self.autostart_pending = false;
         if self.inner.is_some() {
             return;
         }
@@ -278,6 +292,7 @@ impl ServoWebView {
 
     #[func]
     fn stop(&mut self) {
+        self.autostart_pending = false;
         if self.ime_active {
             self.set_ime_enabled(false);
         }
