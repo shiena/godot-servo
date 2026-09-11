@@ -296,14 +296,30 @@ impl ServoWebView {
         if self.ime_active {
             self.set_ime_enabled(false);
         }
-        if let Some(mut inner) = self.inner.take() {
-            // Same rule as `start()` and `set_view_size_px()`: capture before the
-            // first thing that makes Servo's context current. Tearing down is no
-            // exception — `release()` deletes GL objects through Servo's context,
-            // so without this Godot is left rendering against the wrong one.
-            let _host_context = HostContext::capture();
-            inner.bridge.release(&inner.context);
-            drop(inner.webview);
+        if let Some(inner) = self.inner.take() {
+            let Inner {
+                webview,
+                context,
+                sink,
+                mut bridge,
+                _user_content,
+            } = inner;
+            {
+                // Same rule as `start()` and `set_view_size_px()`: capture before
+                // the first thing that makes Servo's context current. Tearing down
+                // is no exception — `release()` deletes GL objects through Servo's
+                // context. Dropping the last handle on that context destroys it,
+                // which leaves no context current at all, so that happens in here
+                // too, before Godot's is put back.
+                let _host_context = HostContext::capture();
+                bridge.release(&context);
+                drop(webview);
+                drop(context);
+            }
+            // The bridge holds Godot's texture, and freeing that is a GL call on
+            // Godot's context, which is current again by now.
+            drop(bridge);
+            drop(sink);
             if let Some(mut server) = ServoServer::singleton() {
                 server.bind_mut().detach(self.base().instance_id());
             }
