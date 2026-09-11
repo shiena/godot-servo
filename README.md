@@ -352,7 +352,7 @@ in `request_navigation` and denies it.
 
 | | |
 | --- | --- |
-| `url`, `view_size`, `autostart`, `enable_webgl2`, `ime_anchor` | Exported properties |
+| `url`, `view_size`, `autostart`, `ime_anchor` | Exported properties |
 | `start()`, `stop()`, `is_running()` | Lifetime |
 | `get_texture()`, `is_texture_flipped_v()`, `needs_external_sampler()`, `get_backend_name()` | Display |
 | `load_url()`, `reload()`, `go_back()`, `go_forward()` | Navigation |
@@ -367,6 +367,25 @@ Signals: `frame_updated`, `title_changed`, `url_changed`, `load_started`, `load_
 `ime_dismissed`, `crashed`, `dialog_alert`, `dialog_confirm`, `dialog_prompt`,
 `select_element_requested`
 
+### ServoServer
+
+`ServoServer` is an engine singleton that owns the one Servo in the process. Servo can only be
+built once per process, so it is built when the first `ServoWebView` starts and kept until the game
+exits. A `ServoWebView` can come and go with its scene; Servo stays.
+
+| | |
+| --- | --- |
+| `enable_webgl2` | Enable WebGL 2.0. On by default |
+
+Settings are read once, when Servo is built. Set one after that and it keeps its value, with a
+warning. Set them before the first `ServoWebView` starts, from an autoload for instance.
+
+```gdscript
+# An autoload
+func _init() -> void:
+    ServoServer.enable_webgl2 = false
+```
+
 ## WebGL
 
 Servo puts WebGL output on the same shared texture. `demo/web/` holds check pages.
@@ -380,7 +399,7 @@ Servo puts WebGL output on the same shared texture. `demo/web/` holds check page
 
 ![three.js 0.180 rendering over WebGL 2.0](shot_three.png)
 
-Servo disables WebGL 2 by default, so `ServoWebView` exposes `enable_webgl2`, which sets the
+Servo disables WebGL 2 by default, so `ServoServer` exposes `enable_webgl2`, which sets the
 `dom_webgl2_enabled` preference. It defaults to on, because current three.js requires it.
 
 ```sh

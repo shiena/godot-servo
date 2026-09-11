@@ -28,6 +28,7 @@ pub mod bridge;
 pub mod delegate;
 pub mod gl_guard;
 pub mod rendering_context;
+pub mod servo_server;
 pub mod waker;
 pub mod webview_node;
 
@@ -40,9 +41,15 @@ struct GodotServo;
 
 #[gdextension]
 unsafe impl ExtensionLibrary for GodotServo {
+    fn on_stage_init(stage: InitStage) {
+        if stage == InitStage::Scene {
+            servo_server::register();
+        }
+    }
+
     fn on_stage_deinit(stage: InitStage) {
         if stage == InitStage::Scene {
-            webview_node::servo_instance::shut_down();
+            servo_server::unregister();
         }
     }
 }

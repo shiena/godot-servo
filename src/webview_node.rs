@@ -1,9 +1,8 @@
 //! `ServoWebView`, the node Godot sees.
 //!
-//! One node corresponds to one Servo `WebView`. There is a single `Servo`
-//! instance per process, shared by every node.
+//! One node corresponds to one Servo `WebView`. The `Servo` behind them all
+//! belongs to `ServoServer`.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use dpi::PhysicalSize;
@@ -17,16 +16,16 @@ use godot::prelude::*;
 use servo::{
     Code, CompositionEvent, CompositionState, DevicePoint, ImeEvent, InputEvent as ServoInputEvent,
     JSValue, JavaScriptEvaluationError, Key, KeyState, KeyboardEvent, Location, Modifiers,
-    MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, PrefValue, Servo,
-    ServoBuilder, TouchEvent, TouchEventType, TouchId, TouchPointerType, UserContentManager,
-    UserScript, WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode,
+    MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, Servo, TouchEvent,
+    TouchEventType, TouchId, TouchPointerType, UserContentManager, UserScript, WebView,
+    WebViewBuilder, WheelDelta, WheelEvent, WheelMode,
 };
 
 use crate::bridge::{self, TextureBridge};
 use crate::delegate::{ServoEvent, ServoEventSink, BRIDGE_SCRIPT};
 use crate::gl_guard::HostContext;
 use crate::rendering_context::GodotRenderingContext;
-use crate::waker::GodotWaker;
+use crate::servo_server::ServoServer;
 
 /// Pixels per wheel notch, matching the value servoshell uses.
 const WHEEL_LINE_HEIGHT: f64 = 76.0;
@@ -41,7 +40,6 @@ struct Inner {
     webview: WebView,
     context: Rc<GodotRenderingContext>,
     sink: Rc<ServoEventSink>,
-    waker: GodotWaker,
     bridge: Box<dyn TextureBridge>,
     _user_content: Rc<UserContentManager>,
 }
@@ -65,11 +63,6 @@ pub struct ServoWebView {
     #[export]
     #[init(val = true)]
     autostart: bool,
-
-    /// Enable WebGL 2.0. Servo has it off by default.
-    #[export]
-    #[init(val = true)]
-    enable_webgl2: bool,
 
     /// Where to put the IME candidate window, in window coordinates.
     ///
@@ -228,6 +221,10 @@ impl ServoWebView {
         if self.inner.is_some() {
             return;
         }
+        let Some(mut server) = ServoServer::singleton() else {
+            godot_error!("godot-servo: ServoServer is not registered");
+            return;
+        };
         let size = self.physical_size();
 
         // Load ANGLE from beside the extension before surfman goes looking for it.
@@ -249,12 +246,7 @@ impl ServoWebView {
             return;
         }
 
-        let waker = GodotWaker::new();
-        let servo = servo_instance::acquire(&waker);
-
-        // Off by default in Servo. The preference is process-wide, so the first
-        // node to start decides it.
-        servo.set_preference("dom_webgl2_enabled", PrefValue::Bool(self.enable_webgl2));
+        let servo = server.bind_mut().servo();
 
         let user_content = Rc::new(UserContentManager::new(&servo));
         user_content.add_script(Rc::new(UserScript::new(BRIDGE_SCRIPT.to_owned(), None)));
@@ -281,7 +273,6 @@ impl ServoWebView {
             webview,
             context,
             sink,
-            waker,
             bridge,
             _user_content: user_content,
         });
@@ -868,8 +859,6 @@ impl ServoWebView {
         // the way out. `spin_event_loop()` touches GL too, so capture before it.
         let _host_context = HostContext::capture();
 
-        // Servo wakes us from its own threads; do not drop those requests.
-        inner.waker.take_pending();
         inner.servo.spin_event_loop();
 
         let repaint = inner.sink.take_dirty();
@@ -1117,58 +1106,6 @@ fn js_value_to_variant(value: JSValue) -> Variant {
                 dictionary.set(&GString::from(&key), &js_value_to_variant(value));
             }
             dictionary.to_variant()
-        }
-    }
-}
-
-/// One `Servo` per process, shared by every `ServoWebView`.
-///
-/// Built by the first node to start and kept until `shut_down()`, not dropped
-/// with the last node. Servo can only be built once per process: `Servo::new`
-/// sets options that cannot be set twice, and SpiderMonkey cannot start again
-/// once it has shut down.
-pub(crate) mod servo_instance {
-    use super::*;
-
-    thread_local! {
-        static INSTANCE: RefCell<Option<Servo>> = const { RefCell::new(None) };
-    }
-
-    pub fn acquire(waker: &GodotWaker) -> Servo {
-        INSTANCE.with(|instance| {
-            let mut instance = instance.borrow_mut();
-            instance
-                .get_or_insert_with(|| {
-                    install_crypto_provider();
-                    let servo = ServoBuilder::default()
-                        .event_loop_waker(Box::new(waker.clone()))
-                        .build();
-                    servo.setup_logging();
-                    servo
-                })
-                .clone()
-        })
-    }
-
-    /// Called when the extension leaves the `Scene` level.
-    ///
-    /// Godot has deleted the `SceneTree` by then, and with it every node, but
-    /// not yet the rendering server or the library this code lives in. That is
-    /// the window for shutting Servo down: its threads have to stop before the
-    /// library is unloaded under them.
-    pub fn shut_down() {
-        if let Some(servo) = INSTANCE.with(|instance| instance.borrow_mut().take()) {
-            // Dropping Servo sends Exit and spins the event loop until the
-            // constellation is gone, which makes Servo's GL context current.
-            let _host_context = HostContext::capture();
-            drop(servo);
-        }
-    }
-
-    /// Servo's network layer assumes a rustls provider has been installed.
-    fn install_crypto_provider() {
-        if rustls::crypto::CryptoProvider::get_default().is_none() {
-            let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         }
     }
 }
