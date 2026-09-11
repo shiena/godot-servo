@@ -296,13 +296,10 @@ impl ServoWebView {
             // Same rule as `start()` and `set_view_size_px()`: capture before the
             // first thing that makes Servo's context current. Tearing down is no
             // exception — `release()` deletes GL objects through Servo's context,
-            // and dropping Servo destroys it, so without this Godot is left
-            // rendering against a context that is first wrong and then gone.
+            // so without this Godot is left rendering against the wrong one.
             let _host_context = HostContext::capture();
             inner.bridge.release(&inner.context);
             drop(inner.webview);
-            drop(inner.servo);
-            servo_instance::release();
         }
     }
 
@@ -1125,16 +1122,19 @@ fn js_value_to_variant(value: JSValue) -> Variant {
 }
 
 /// One `Servo` per process, shared by every `ServoWebView`.
-mod servo_instance {
+///
+/// Built by the first node to start and kept until `shut_down()`, not dropped
+/// with the last node. Servo can only be built once per process: `Servo::new`
+/// sets options that cannot be set twice, and SpiderMonkey cannot start again
+/// once it has shut down.
+pub(crate) mod servo_instance {
     use super::*;
 
     thread_local! {
         static INSTANCE: RefCell<Option<Servo>> = const { RefCell::new(None) };
-        static REFCOUNT: RefCell<usize> = const { RefCell::new(0) };
     }
 
     pub fn acquire(waker: &GodotWaker) -> Servo {
-        REFCOUNT.with(|count| *count.borrow_mut() += 1);
         INSTANCE.with(|instance| {
             let mut instance = instance.borrow_mut();
             instance
@@ -1150,14 +1150,18 @@ mod servo_instance {
         })
     }
 
-    pub fn release() {
-        let remaining = REFCOUNT.with(|count| {
-            let mut count = count.borrow_mut();
-            *count = count.saturating_sub(1);
-            *count
-        });
-        if remaining == 0 {
-            INSTANCE.with(|instance| instance.borrow_mut().take());
+    /// Called when the extension leaves the `Scene` level.
+    ///
+    /// Godot has deleted the `SceneTree` by then, and with it every node, but
+    /// not yet the rendering server or the library this code lives in. That is
+    /// the window for shutting Servo down: its threads have to stop before the
+    /// library is unloaded under them.
+    pub fn shut_down() {
+        if let Some(servo) = INSTANCE.with(|instance| instance.borrow_mut().take()) {
+            // Dropping Servo sends Exit and spins the event loop until the
+            // constellation is gone, which makes Servo's GL context current.
+            let _host_context = HostContext::capture();
+            drop(servo);
         }
     }
 
