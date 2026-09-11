@@ -8,15 +8,20 @@
 //!
 //! The settings here are read once, when Servo is built. Set them before the
 //! first `ServoWebView` starts, from an autoload for instance.
+//!
+//! Servo is pumped here as well, once per frame, from `SceneTree::process_frame`.
+//! Godot emits that signal before any node's `_process`, so every node's input
+//! reaches Servo before the spin and every node paints after it.
 
 use std::cell::RefCell;
 
-use godot::classes::Engine;
+use godot::classes::{Engine, SceneTree};
 use godot::prelude::*;
 use servo::{Preferences, Servo, ServoBuilder};
 
 use crate::gl_guard::HostContext;
 use crate::waker::GodotWaker;
+use crate::webview_node::ServoWebView;
 
 const SINGLETON_NAME: &str = "ServoServer";
 
@@ -59,6 +64,9 @@ pub struct ServoServer {
 
     servo: Option<Servo>,
     waker: GodotWaker,
+    /// The running `ServoWebView`s. Ids rather than `Gd`s, so a node freed
+    /// without leaving the tree is skipped instead of dereferenced.
+    webviews: Vec<InstanceId>,
 }
 
 #[godot_api]
@@ -77,8 +85,11 @@ impl ServoServer {
         SINGLETON.with(|singleton| singleton.borrow().clone())
     }
 
-    /// Servo, built on the first call.
-    pub fn servo(&mut self) -> Servo {
+    /// Servo, built on the first call. `webview` is pumped from now on.
+    pub fn attach(&mut self, webview: InstanceId) -> Servo {
+        if !self.webviews.contains(&webview) {
+            self.webviews.push(webview);
+        }
         if let Some(servo) = &self.servo {
             return servo.clone();
         }
@@ -94,11 +105,59 @@ impl ServoServer {
             .build();
         servo.setup_logging();
 
+        match Engine::singleton()
+            .get_main_loop()
+            .and_then(|main_loop| main_loop.try_cast::<SceneTree>().ok())
+        {
+            Some(tree) => {
+                tree.signals()
+                    .process_frame()
+                    .connect_other(&self.to_gd(), Self::pump);
+            }
+            None => godot_error!("godot-servo: no SceneTree to pump Servo from"),
+        }
+
         self.servo = Some(servo.clone());
         servo
     }
 
+    /// Stop pumping `webview`. Servo itself stays up for the next one.
+    pub fn detach(&mut self, webview: InstanceId) {
+        self.webviews.retain(|id| *id != webview);
+    }
+
+    /// Once per frame, before any node's `_process`.
+    fn pump(&mut self) {
+        let Some(servo) = self.servo.clone() else {
+            return;
+        };
+        self.webviews
+            .retain(|id| Gd::<ServoWebView>::try_from_instance_id(*id).is_ok());
+        let active: Vec<Gd<ServoWebView>> = self
+            .webviews
+            .iter()
+            .filter_map(|id| Gd::<ServoWebView>::try_from_instance_id(*id).ok())
+            .filter(|webview| webview.is_inside_tree() && webview.can_process())
+            .collect();
+
+        // While every node is paused, so is Servo, as it was when each node
+        // pumped from its own `_process`. With no node running at all there is
+        // still the last WebView's teardown to finish, so a wake-up is answered.
+        let woken = self.waker.take_pending();
+        if active.is_empty() && (!self.webviews.is_empty() || !woken) {
+            return;
+        }
+
+        for mut webview in active {
+            webview.bind_mut().before_spin();
+        }
+        // `spin_event_loop()` makes Servo's GL context current.
+        let _host_context = HostContext::capture();
+        servo.spin_event_loop();
+    }
+
     fn shut_down(&mut self) {
+        self.webviews.clear();
         if let Some(servo) = self.servo.take() {
             // Dropping Servo sends Exit and spins the event loop until the
             // constellation is gone, which makes Servo's GL context current.

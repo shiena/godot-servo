@@ -1,7 +1,7 @@
 //! `ServoWebView`, the node Godot sees.
 //!
 //! One node corresponds to one Servo `WebView`. The `Servo` behind them all
-//! belongs to `ServoServer`.
+//! belongs to `ServoServer`, which also pumps it.
 
 use std::rc::Rc;
 
@@ -16,9 +16,9 @@ use godot::prelude::*;
 use servo::{
     Code, CompositionEvent, CompositionState, DevicePoint, ImeEvent, InputEvent as ServoInputEvent,
     JSValue, JavaScriptEvaluationError, Key, KeyState, KeyboardEvent, Location, Modifiers,
-    MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, Servo, TouchEvent,
-    TouchEventType, TouchId, TouchPointerType, UserContentManager, UserScript, WebView,
-    WebViewBuilder, WheelDelta, WheelEvent, WheelMode,
+    MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, TouchEvent, TouchEventType,
+    TouchId, TouchPointerType, UserContentManager, UserScript, WebView, WebViewBuilder, WheelDelta,
+    WheelEvent, WheelMode,
 };
 
 use crate::bridge::{self, TextureBridge};
@@ -36,7 +36,6 @@ const WHEEL_LINE_HEIGHT: f64 = 76.0;
 const DEVICE_ID_EMULATION: i32 = -1;
 
 struct Inner {
-    servo: Servo,
     webview: WebView,
     context: Rc<GodotRenderingContext>,
     sink: Rc<ServoEventSink>,
@@ -246,7 +245,7 @@ impl ServoWebView {
             return;
         }
 
-        let servo = server.bind_mut().servo();
+        let servo = server.bind_mut().attach(self.base().instance_id());
 
         let user_content = Rc::new(UserContentManager::new(&servo));
         user_content.add_script(Rc::new(UserScript::new(BRIDGE_SCRIPT.to_owned(), None)));
@@ -269,7 +268,6 @@ impl ServoWebView {
         );
 
         self.inner = Some(Inner {
-            servo,
             webview,
             context,
             sink,
@@ -291,6 +289,9 @@ impl ServoWebView {
             let _host_context = HostContext::capture();
             inner.bridge.release(&inner.context);
             drop(inner.webview);
+            if let Some(mut server) = ServoServer::singleton() {
+                server.bind_mut().detach(self.base().instance_id());
+            }
         }
     }
 
@@ -834,7 +835,16 @@ impl ServoWebView {
         ));
     }
 
-    /// The per-frame work: pump Servo, repaint when needed, emit what queued up.
+    /// What has to reach Servo before `ServoServer` spins it this frame.
+    ///
+    /// Input handling finished before `process_frame`, so the committed text is
+    /// complete by now.
+    pub(crate) fn before_spin(&mut self) {
+        self.flush_commit();
+    }
+
+    /// The per-frame work after `ServoServer` has spun Servo: repaint when
+    /// needed, emit what queued up.
     fn pump(&mut self) {
         // Owed to callers whose evaluation never reached Servo. Emitted whether
         // or not the node is running, since nothing else will deliver them.
@@ -844,22 +854,13 @@ impl ServoWebView {
                 .emit(id, &Variant::nil(), &GString::from(&error));
         }
 
-        if self.inner.is_none() {
-            return;
-        }
-        // Input handling finished before this frame's `_process`, so the committed
-        // text is complete by now.
-        self.flush_commit();
-
         let Some(inner) = self.inner.as_ref() else {
             return;
         };
 
         // Only for as long as Servo borrows the GL context; Godot's is restored on
-        // the way out. `spin_event_loop()` touches GL too, so capture before it.
+        // the way out.
         let _host_context = HostContext::capture();
-
-        inner.servo.spin_event_loop();
 
         let repaint = inner.sink.take_dirty();
         let events = inner.sink.drain();
