@@ -63,6 +63,15 @@ pub struct ServoServer {
     #[init(val = true)]
     enable_webgl2: bool,
 
+    /// Enable WebGPU. Servo has it off by default.
+    ///
+    /// On here, because the binary carries wgpu either way, and Servo starts
+    /// its WebGPU thread only on a page's first request. A `file://` page
+    /// cannot use it at all; see the README.
+    #[var(set = set_enable_webgpu)]
+    #[init(val = true)]
+    enable_webgpu: bool,
+
     servo: Option<Servo>,
     waker: GodotWaker,
     /// The running `ServoWebView`s. Ids rather than `Gd`s, so a node freed
@@ -76,6 +85,13 @@ impl ServoServer {
     fn set_enable_webgl2(&mut self, value: bool) {
         if value != self.enable_webgl2 && !self.refuse_change("enable_webgl2") {
             self.enable_webgl2 = value;
+        }
+    }
+
+    #[func]
+    fn set_enable_webgpu(&mut self, value: bool) {
+        if value != self.enable_webgpu && !self.refuse_change("enable_webgpu") {
+            self.enable_webgpu = value;
         }
     }
 }
@@ -95,9 +111,14 @@ impl ServoServer {
             return servo.clone();
         }
 
+        // Servo leaves threads behind that nothing can join, so this library has
+        // to stay mapped after Godot unloads it at exit. See `module_pin`.
+        crate::module_pin::pin();
+
         install_crypto_provider();
         let preferences = Preferences {
             dom_webgl2_enabled: self.enable_webgl2,
+            dom_webgpu_enabled: self.enable_webgpu,
             ..Default::default()
         };
         let servo = ServoBuilder::default()

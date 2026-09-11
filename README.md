@@ -376,6 +376,7 @@ exits. A `ServoWebView` can come and go with its scene; Servo stays.
 | | |
 | --- | --- |
 | `enable_webgl2` | Enable WebGL 2.0. On by default |
+| `enable_webgpu` | Enable WebGPU. On by default; see [WebGPU](#webgpu) |
 
 Settings are read once, when Servo is built. Set one after that and it keeps its value, with a
 warning. Set them before the first `ServoWebView` starts: from an autoload, or from any `_ready()`
@@ -413,6 +414,57 @@ scripts/build.ps1 -Run -Page http://127.0.0.1:8731/three.html
 ```
 
 `-Page` opens `res://demo/web/<name>.html`. A value starting with `http` is used as a URL.
+
+## WebGPU
+
+WebGPU output lands on the same shared texture as WebGL. `demo/web/webgpu.html` draws to a canvas,
+and `webgpu-compute.html` runs a compute shader with no canvas at all.
+
+| | Result |
+| --- | --- |
+| Windows / D3D12 | Works, in a release build |
+| Windows / Vulkan | Works, in a release build |
+| macOS / Metal | Works |
+| macOS / Vulkan (MoltenVK) | Compute works; the canvas page was not tried |
+| Linux / Vulkan | Works |
+| Android | No adapter |
+
+Android is the one that does not work, and nothing else about the extension is: on the same device
+the demo runs through `android-ahardwarebuffer`, the WebGL check pages render, and the self check
+passes. `servo-webgpu` builds its wgpu instance with `STRICT_WEBGPU_COMPLIANCE` set unconditionally,
+which holds every adapter to the whole of `DownlevelFlags::compliant()`. The Android driver tested
+has no `VK_KHR_swapchain_mutable_format`, so its adapter arrives short of `SURFACE_VIEW_FORMATS` and
+`requestAdapter()` answers null — over a swapchain capability this embedding never asks for, since
+Servo renders offscreen.
+
+`ServoServer.enable_webgpu` sets the `dom_webgpu_enabled` preference and defaults to on. Enabling
+the `webgpu` feature pulls wgpu and naga into the binary either way.
+
+**A `file://` page cannot use WebGPU.** `Constellation::handle_wgpu_request` asks
+`registered_domain_name` for the page's host, and a `file://` page has an opaque origin with none,
+so the request is dropped without an answer. `navigator.gpu` is there the whole time and
+`requestAdapter()` never settles: it does not reject, it hangs. Serve the pages instead.
+
+```sh
+( cd demo/web && python -m http.server 8731 --bind 127.0.0.1 & )
+scripts/build.ps1 -Run -Page http://127.0.0.1:8731/webgpu.html
+```
+
+**Servo 0.5.0 never stops its WebGPU thread.** `Constellation::handle_shutdown` looks for the
+WebGPU channels in the browsing context group that closing the last webview has already removed,
+so the `WGPU` thread and its poller outlive Servo. Godot unloads a GDExtension near the end of
+`Main::cleanup()`, and on Windows a debug build then exits with an access violation (`0xC0000005`),
+from the poller running in code that is no longer mapped. `src/module_pin.rs` pins the library so
+that it is never unloaded, and `GODOT_SERVO_NO_PIN=1` turns the pin off. A release build did not
+fault without the pin in seven runs, but it leaks the same thread, so the pin stays.
+
+**On Windows, a debug build with WebGPU makes Godot lose its GPU device.** Servo builds its wgpu
+instance with `InstanceFlags::from_build_config()`, which turns validation on whenever
+`debug_assertions` is. wgpu's DX12 backend then enables the D3D12 debug layer, and enabling it
+removes every D3D12 device created before it. Under the D3D12 renderer that is Godot's own device,
+and the next allocation fails with `0x887a0005`. Under the Vulkan renderer Godot's Vulkan device is
+lost (`VK_ERROR_DEVICE_LOST`) as soon as the DX12 backend is enumerated. Release builds leave
+validation off and are unaffected, so test WebGPU on Windows with `-Release`.
 
 ## Design notes
 
@@ -497,10 +549,6 @@ cannot `dlopen` it. `Cargo.toml` therefore declares `tikv-jemalloc-sys` directly
 
 ## Not supported
 
-- **WebGPU.** Servo's implementation crashes this embedding: device creation and compute shaders
-  work, but the process dies with SIGSEGV, always when presenting to a canvas and on teardown even
-  without one. The `webgpu` feature is off, and enabling it also pulls wgpu and naga into an already
-  large binary. `demo/web/webgpu.html` and `webgpu-compute.html` are there for a future retest.
 - **Scene color feedback**, for blurring the game behind the page with CSS `backdrop-filter`.
   `CompositorEffect` covers the Godot side, but the Servo side needs a fork that adds a
   `WebRenderImageHandlerType`.

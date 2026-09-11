@@ -367,6 +367,7 @@ Servo はプロセスごとに一度しか作れないので、最初の `ServoW
 | | |
 | --- | --- |
 | `enable_webgl2` | WebGL 2.0 を有効にする。既定は有効 |
+| `enable_webgpu` | WebGPU を有効にする。既定は有効。[WebGPU](#webgpu) を参照 |
 
 設定は Servo を作るときに 1 回だけ読みます。それ以降に変更しようとすると、値は変わらず警告が出ます。
 最初の `ServoWebView` が開始する前に設定してください。autoload から設定するか、
@@ -405,6 +406,61 @@ scripts/build.ps1 -Run -Page http://127.0.0.1:8731/three.html
 ```
 
 `-Page` は `res://demo/web/<名前>.html` を開きます。`http` で始まる文字列はそのまま URL として扱います。
+
+## WebGPU
+
+WebGPU の描画結果も、WebGL と同じ共有テクスチャに乗ります。
+`demo/web/webgpu.html` は canvas に描画し、`webgpu-compute.html` は canvas を使わずにコンピュートシェーダだけを動かします。
+
+| | 結果 |
+| --- | --- |
+| Windows / D3D12 | release ビルドで動く |
+| Windows / Vulkan | release ビルドで動く |
+| macOS / Metal | 動く |
+| macOS / Vulkan (MoltenVK) | コンピュートは動く。canvas のページは未確認 |
+| Linux / Vulkan | 動く |
+| Android | アダプターが得られない |
+
+動かないのは Android だけで、拡張のそれ以外の部分はこの影響を受けません。
+同じ端末で、デモは `android-ahardwarebuffer` の経路で動き、WebGL の確認用ページも描画され、
+自己診断も通ります。
+`servo-webgpu` は wgpu のインスタンスに `STRICT_WEBGPU_COMPLIANCE` を無条件で立てており、
+すべてのアダプターに `DownlevelFlags::compliant()` の全項目を要求します。
+確認した Android のドライバには `VK_KHR_swapchain_mutable_format` がないため、
+アダプターは `SURFACE_VIEW_FORMATS` を欠いた状態で現れ、`requestAdapter()` は null を返します。
+この組み込み方はスワップチェーンを要求しない (Servo はオフスクリーンに描画する) のに、
+その機能の有無で落とされている形です。
+
+`ServoServer.enable_webgpu` は `dom_webgpu_enabled` を設定し、既定は有効です。
+`webgpu` フィーチャを有効にすると、この設定に関係なく wgpu と naga がバイナリに入ります。
+
+**`file://` のページでは WebGPU を使えません。**
+`Constellation::handle_wgpu_request` は `registered_domain_name` にページのホストを尋ねますが、
+`file://` のページのオリジンは不透明 (opaque) でホストがないため、要求は返事をされないまま捨てられます。
+`navigator.gpu` はずっと存在し、`requestAdapter()` は reject もされずに止まったままになります。
+ページは HTTP で配信してください。
+
+```sh
+( cd demo/web && python -m http.server 8731 --bind 127.0.0.1 & )
+scripts/build.ps1 -Run -Page http://127.0.0.1:8731/webgpu.html
+```
+
+**Servo 0.5.0 は WebGPU のスレッドを止めません。**
+`Constellation::handle_shutdown` は WebGPU のチャンネルを閲覧コンテキストグループから探しますが、
+最後の webview を閉じた時点でそのグループはもう消えています。
+そのため `WGPU` スレッドとその poller は Servo より長く生き残ります。
+Godot は `Main::cleanup()` の終わり近くで GDExtension をアンロードするので、
+Windows の debug ビルドでは、マップが外れたコードを poller が実行し、終了時にアクセス違反 (`0xC0000005`) になります。
+`src/module_pin.rs` はライブラリを pin してアンロードされないようにします。
+`GODOT_SERVO_NO_PIN=1` で pin を外せます。
+release ビルドでは pin なしでも 7 回中 1 回も落ちませんでしたが、同じスレッドは残っているので pin は外しません。
+
+**Windows では、WebGPU を有効にした debug ビルドで Godot が GPU デバイスを失います。**
+Servo は wgpu のインスタンスを `InstanceFlags::from_build_config()` で作り、これは `debug_assertions` が有効なら検証 (validation) も有効にします。
+すると wgpu の DX12 バックエンドが D3D12 のデバッグレイヤーを有効にし、それより前に作られた D3D12 デバイスはすべて失われます。
+D3D12 レンダラーでは Godot 自身のデバイスがこれに当たり、次の確保が `0x887a0005` で失敗します。
+Vulkan レンダラーでも、DX12 バックエンドが列挙された時点で Godot の Vulkan デバイスが失われます (`VK_ERROR_DEVICE_LOST`)。
+release ビルドは検証を有効にしないので影響を受けません。Windows で WebGPU を確認するときは `-Release` を使ってください。
 
 ## 設計メモ
 
@@ -490,11 +546,6 @@ Servo は `servo-allocator` を通じて jemalloc を取り込みますが、jem
 
 ## 対応していないもの
 
-- **WebGPU。** Servo の実装がこの組み込み方だとクラッシュします。デバイスの作成もコンピュートシェーダも
-  動きますが、canvas に表示した時点で必ず、canvas を使わなくても終了時に SIGSEGV で落ちます。
-  `webgpu` フィーチャは切ってあります。有効にすると wgpu と naga も抱き込み、ただでさえ大きい
-  バイナリがさらに膨らみます。将来の再確認用に `demo/web/webgpu.html` と `webgpu-compute.html` を
-  置いてあります。
 - **シーンの色を読むこと。** CSS の `backdrop-filter` でページの後ろのゲーム画面をぼかす用途です。
   Godot 側は `CompositorEffect` で足りますが、Servo 側は `WebRenderImageHandlerType` を足した
   フォークが要ります。
