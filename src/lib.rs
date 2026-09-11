@@ -27,6 +27,8 @@ pub mod angle_loader;
 pub mod bridge;
 pub mod delegate;
 pub mod gl_guard;
+#[cfg(windows)]
+pub mod gpu_adapter;
 pub mod module_pin;
 pub mod rendering_context;
 pub mod servo_server;

@@ -540,6 +540,27 @@ straight in what becomes the texture's contents. Two sets are enough because a t
 At 1280×720 in a release build, that takes the per-frame update from 1.93 ms to 1.34 ms, and removes
 about 7 MB of allocation and one full-frame copy per frame.
 
+### Keeping Servo on Godot's GPU
+
+A shared texture only means anything when both sides are the same GPU. Godot picks its device by
+type score, or by whatever `--gpu-index` says. Servo's is wherever surfman's own rule lands: the
+first adapter that is not Intel on Windows, the PRIME one (`DRI_PRIME=1`) on Mesa. With more than
+one GPU in the machine those two can differ, and the import then fails and the bridge falls back to
+CPU readback.
+
+On Windows the two are made to agree. `src/gpu_adapter.rs` asks Godot for the LUID of the adapter it
+renders on — `ID3D12Device::GetAdapterLuid` under D3D12, `VkPhysicalDeviceIDProperties::deviceLUID`
+under Vulkan — finds that adapter in DXGI's list and hands it to surfman. With two GPUs in the
+machine, pointing `--gpu-index` at the second one used to end in `cpu-readback` and now keeps
+`d3d12-shared-nt-handle`.
+
+Linux and Android cannot be steered that way: surfman's EGL backends offer hardware, low-power and
+software, and no way to name a GPU. So the mismatch is reported instead. Before anything is
+allocated, the opaque-fd path compares Godot's Vulkan `deviceUUID` with GL's `GL_DEVICE_UUID_EXT`
+and, where they differ, says which GPU each side is on and takes the readback path, rather than
+failing somewhere inside the driver. Where either side cannot answer — GL without
+`glGetUnsignedBytevEXT`, Vulkan before 1.1 — nothing is checked.
+
 ### Why jemalloc is rebuilt on Linux
 
 Servo pulls jemalloc in through `servo-allocator`, and jemalloc defaults to initial-exec TLS. That

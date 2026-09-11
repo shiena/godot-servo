@@ -53,7 +53,10 @@ windows = { version = "0.62", features = [
   "Win32_System_LibraryLoader",
 ] }
 wio = "0.2"
-winapi = { version = "0.3", features = ["d3d11"] }
+# `dxgi` is for the adapter handed to surfman in src/gpu_adapter.rs: surfman
+# takes the `winapi` flavour of `IDXGIAdapter`, and this is where that type
+# comes from.
+winapi = { version = "0.3", features = ["d3d11", "dxgi"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Build jemalloc with a TLS model that can be dlopen'd.

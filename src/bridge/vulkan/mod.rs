@@ -26,7 +26,7 @@
 //! `crate::bridge::create_owned_rd_texture` goes into.
 
 pub mod caps;
-mod device;
+pub(crate) mod device;
 
 #[cfg(windows)]
 mod win32;

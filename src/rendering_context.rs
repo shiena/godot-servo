@@ -20,9 +20,27 @@ use gleam::gl::{self, Gl};
 use image::RgbaImage;
 use servo::{DeviceIntRect, RenderingContext};
 use surfman::{
-    Connection, Context, ContextAttributeFlags, ContextAttributes, Device, Error, GLApi, Surface,
-    SurfaceAccess, SurfaceTexture, SurfaceType,
+    Adapter, Connection, Context, ContextAttributeFlags, ContextAttributes, Device, Error, GLApi,
+    Surface, SurfaceAccess, SurfaceTexture, SurfaceType,
 };
+
+/// The adapter Servo draws on.
+///
+/// On Windows that is the one Godot renders on, so that the shared texture can
+/// be opened on both sides; see [`crate::gpu_adapter`]. Where Godot cannot be
+/// asked, and on every other platform, surfman's own choice stands.
+#[cfg(windows)]
+fn adapter_for(connection: &Connection) -> Result<Adapter, Error> {
+    match crate::gpu_adapter::godot_adapter() {
+        Some(adapter) => Ok(adapter),
+        None => connection.create_adapter(),
+    }
+}
+
+#[cfg(not(windows))]
+fn adapter_for(connection: &Connection) -> Result<Adapter, Error> {
+    connection.create_adapter()
+}
 
 pub struct GodotRenderingContext {
     gleam_gl: Rc<dyn Gl>,
@@ -48,7 +66,7 @@ impl GodotRenderingContext {
         // No window handle is passed. On Windows, with `sm-angle-default`
         // enabled, this yields a Device on the ANGLE (D3D11) backend.
         let connection = Connection::new()?;
-        let adapter = connection.create_adapter()?;
+        let adapter = adapter_for(&connection)?;
         let device = connection.create_device(&adapter)?;
 
         let flags = ContextAttributeFlags::ALPHA

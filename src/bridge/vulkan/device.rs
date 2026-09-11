@@ -94,6 +94,35 @@ impl VulkanDevice {
         Ok(())
     }
 
+    /// The UUID of the physical device Godot renders on.
+    ///
+    /// GL reports the same bytes for its own device through `GL_DEVICE_UUID_EXT`,
+    /// which is what makes the two comparable. `None` where the answer cannot be
+    /// had: `vkGetPhysicalDeviceProperties2` is core in Vulkan 1.1 and absent
+    /// before it, and a caller that cannot ask simply does not check.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub fn device_uuid(&self) -> Option<[u8; vk::UUID_SIZE]> {
+        // SAFETY: Godot's own live instance and physical device.
+        let properties = unsafe {
+            self.instance
+                .get_physical_device_properties(self.physical_device)
+        };
+        if vk::api_version_major(properties.api_version) == 1
+            && vk::api_version_minor(properties.api_version) < 1
+        {
+            return None;
+        }
+
+        let mut id = vk::PhysicalDeviceIDProperties::default();
+        let mut properties2 = vk::PhysicalDeviceProperties2::default().push_next(&mut id);
+        // SAFETY: as above, and the version check has cleared the entry point.
+        unsafe {
+            self.instance
+                .get_physical_device_properties2(self.physical_device, &mut properties2);
+        }
+        Some(id.device_uuid)
+    }
+
     /// The index of a memory type the imported or exported allocation can use.
     ///
     /// Device-local for preference, but not as a requirement: which types an

@@ -536,6 +536,29 @@ Godot 所有のテクスチャへコピーし、そちらを表示します。�
 1280×720 の release ビルドで、1 フレームあたりの更新が 1.93 ms から 1.34 ms になり、
 毎フレームの確保 約 7 MB と全画面 1 回分のコピーが消えます。
 
+### Servo を Godot と同じ GPU に載せる
+
+共有テクスチャは、両方が同じ GPU にいて初めて意味を持ちます。
+Godot はデバイスの種別のスコア、または `--gpu-index` で選びます。
+一方 Servo 側は surfman の規則に従い、Windows では「Intel でない最初のアダプター」、
+Mesa では PRIME のもの (`DRI_PRIME=1`) になります。
+GPU が複数ある環境ではこの 2 つが食い違うことがあり、そうなると取り込みに失敗して
+CPU 読み戻しに落ちます。
+
+Windows では、両者を一致させます。`src/gpu_adapter.rs` が、Godot の描画しているアダプターの
+LUID を尋ね (D3D12 なら `ID3D12Device::GetAdapterLuid`、Vulkan なら
+`VkPhysicalDeviceIDProperties::deviceLUID`)、DXGI の一覧からそのアダプターを見つけて
+surfman に渡します。GPU が 2 つある環境で `--gpu-index` に 2 つ目を指定すると、
+これまで `cpu-readback` に落ちていましたが、`d3d12-shared-nt-handle` を保つようになりました。
+
+Linux と Android では同じ方法が使えません。surfman の EGL バックエンドは hardware、low-power、
+software しか選べず、GPU を名指しできないためです。そこで、食い違いを検出して報告します。
+opaque fd の経路は、何かを確保する前に Godot の Vulkan の `deviceUUID` と GL の
+`GL_DEVICE_UUID_EXT` を比べ、違っていればどちらの GPU にいるかを示して読み戻しの経路に移ります。
+ドライバの奥で失敗させるよりも、理由がわかるほうが直せるからです。
+どちらかが答えられない場合 (GL に `glGetUnsignedBytevEXT` がない、Vulkan が 1.1 未満) は、
+何も判定しません。
+
 ### Linux で jemalloc をビルドし直す理由
 
 Servo は `servo-allocator` を通じて jemalloc を取り込みますが、jemalloc は既定で initial-exec TLS を
