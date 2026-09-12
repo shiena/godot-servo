@@ -1,0 +1,66 @@
+diff --git a/src/instance.rs b/src/instance.rs
+index 26a3050..750ee01 100644
+--- a/src/instance.rs
++++ b/src/instance.rs
+@@ -1363,8 +1363,9 @@ fn adapter_allowed(
+         return false;
+     }
+ 
+-    if !downlevel.is_webgpu_compliant() {
+-        let missing_flags = wgt::DownlevelFlags::compliant() - downlevel.flags;
++    let required_downlevel_flags = required_downlevel_flags();
++    if !downlevel.flags.contains(required_downlevel_flags) {
++        let missing_flags = required_downlevel_flags - downlevel.flags;
+         log::debug!(
+             "Adapter {:?} is not WebGPU compliant due to missing downlevel flags: {:?}",
+             info,
+@@ -1376,6 +1377,23 @@ fn adapter_allowed(
+     true
+ }
+ 
++/// The downlevel flags an adapter has to expose to be considered compliant.
++///
++/// This is [`wgt::DownlevelFlags::compliant()`] everywhere but Android, which
++/// drops `SURFACE_VIEW_FORMATS` from it. wgpu-hal derives that flag from
++/// `VK_KHR_swapchain_mutable_format`, an extension Android's Vulkan drivers do
++/// not expose, so requiring it rejects every adapter on the platform. The flag
++/// only governs which view formats a texture from
++/// `Surface::get_current_texture` may be viewed as, so an embedder that renders
++/// offscreen is held to a capability it never reaches.
++fn required_downlevel_flags() -> wgt::DownlevelFlags {
++    let mut flags = wgt::DownlevelFlags::compliant();
++    if cfg!(target_os = "android") {
++        flags.remove(wgt::DownlevelFlags::SURFACE_VIEW_FORMATS);
++    }
++    flags
++}
++
+ fn filter_features_and_limits(
+     flags: InstanceFlags,
+     features: &mut wgt::Features,
+@@ -1480,6 +1498,25 @@ mod tests {
+         ));
+     }
+ 
++    /// `SURFACE_VIEW_FORMATS` is the one compliant flag Android is excused
++    /// from, so the same adapter is rejected everywhere else and allowed there.
++    #[test]
++    fn surface_view_formats_only_required_off_android() {
++        let downlevel = wgt::DownlevelCapabilities {
++            flags: wgt::DownlevelFlags::compliant() - wgt::DownlevelFlags::SURFACE_VIEW_FORMATS,
++            ..Default::default()
++        };
++        assert_eq!(
++            adapter_allowed(
++                InstanceFlags::STRICT_WEBGPU_COMPLIANCE,
++                &"",
++                &wgt::Limits::defaults(),
++                &downlevel
++            ),
++            cfg!(target_os = "android")
++        );
++    }
++
+     #[test]
+     fn fully_compliant_adapter_always_allowed() {
+         assert!(adapter_allowed(

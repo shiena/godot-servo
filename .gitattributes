@@ -1,2 +1,4 @@
 # Shell scripts are run directly from WSL too, and CRLF breaks the shebang.
 *.sh text eol=lf
+# Patches are applied from WSL and CI against LF sources.
+*.patch text eol=lf

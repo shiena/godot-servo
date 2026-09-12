@@ -149,6 +149,11 @@ jobs:
         with:
           name: version-commit
 
+      # Without this Android gets no WebGPU adapter; see the script. ci.yaml runs
+      # the same step, so a patch that no longer applies fails there first.
+      - name: Patch wgpu-core
+        run: ./scripts/patch-wgpu-core.sh
+
       - name: Build and stage the addon
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
