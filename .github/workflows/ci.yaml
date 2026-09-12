@@ -145,6 +145,12 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
+      # Without this Android gets no WebGPU adapter; see the script. Running it
+      # here rather than only at release means a wgpu-core the patch no longer
+      # applies to fails on the change that moved it.
+      - name: Patch wgpu-core
+        run: ./scripts/patch-wgpu-core.sh
+
       # The runner has ANDROID_NDK_ROOT as a real environment variable.
       # `${{ env.* }}` only sees the workflow's own env, so copy it across here.
       - name: Build and stage the addon

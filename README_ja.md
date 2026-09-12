@@ -368,14 +368,16 @@ WebGPU の描画結果も、WebGL と同様に同じ共有テクスチャ上に�
 | macOS / Metal | 動作 |
 | macOS / Vulkan (MoltenVK) | コンピュートシェーダは動作（canvas 描画は未検証） |
 | Linux / Vulkan | 動作 |
-| Android | アダプタ取得不可（非対応） |
+| Android / Compatibility | wgpu-core にパッチを当てて動作（後述） |
 
 `ServoServer.enable_webgpu` は `dom_webgpu_enabled` 設定を切り替えます（既定値: 有効）。
 Cargo の `webgpu` フィーチャを有効にすると、ページ側で使うかどうかに関わらず、wgpu と naga がバイナリに含まれます。
 
-**Android ではアダプタを取得できません。**
-`servo-webgpu` は、wgpu インスタンスの生成時に `STRICT_WEBGPU_COMPLIANCE` を無条件で指定します。このフラグはすべてのアダプタに対して `DownlevelFlags::compliant()` の全項目を要求します。その中の 1 つに `SURFACE_VIEW_FORMATS` がありますが、wgpu はこれを `VK_KHR_swapchain_mutable_format` の有無から判定しており、Android では使えないと明記しています。そのためアダプタがすべて除外され、JavaScript の `requestAdapter()` は `null` を返します。
-このフラグはスワップチェーンイメージを別フォーマットのビューで表示するための機能ですが、Servo はオフスクリーン描画を行うため、本アドオンの組み込み方ではその機能を使いません。なお、拡張の他の機能には影響せず、同じ端末上でデモは `android-ahardwarebuffer` 経路で動作し、WebGL の確認ページも描画され、セルフチェックも通過します。
+**Android では wgpu-core にパッチを当てています。**
+`servo-webgpu` は、wgpu インスタンスの生成時に `STRICT_WEBGPU_COMPLIANCE` を無条件で指定します。このフラグはすべてのアダプタに対して `DownlevelFlags::compliant()` の全項目を要求します。その中の 1 つに `SURFACE_VIEW_FORMATS` がありますが、wgpu はこれを `VK_KHR_swapchain_mutable_format` の有無から判定しており、Android では使えないと明記しています。そのままではアダプタがすべて除外され、JavaScript の `requestAdapter()` は `null` を返します。
+このフラグが関わるのは `Surface::get_current_texture` が返すテクスチャだけで、Servo は wgpu の `Surface` を作りません。`patches/wgpu-core-30.0.1-android.patch` は Android でだけこのフラグを要求から外すパッチで、`scripts/patch-wgpu-core.sh` がそれを crate のコピーに当て、cargo がそのコピーを使うように設定します。CI とリリースは Android 向けのビルドの前にこのスクリプトを実行し、それ以外のビルドは公開されている wgpu-core をそのまま使います。Adreno 710（Android 14）で両方のデモページの動作を確認しました。上流への報告は [servo/servo#48024](https://github.com/servo/servo/issues/48024) です。
+手元で Android 向けにビルドするときは、`./scripts/build.sh --android` の前に `./scripts/patch-wgpu-core.sh` を実行してください。スクリプトは `.cargo/config.toml` を残すので、そのファイルを消すまでは、そのチェックアウトのすべての cargo コマンドがパッチ済みのコピーを使います。
+`Cargo.toml` は wgpu-core を、パッチの対象である 30.0.1 に固定しています。このバージョンを動かすと、パッチを書き直すまでスクリプトが失敗します。
 
 **`file://` のページでは WebGPU を使えません。**
 `Constellation::handle_wgpu_request` は、ページのホスト名を `registered_domain_name` から取得します。しかし `file://` のページはオリジンが不透明（opaque）でホスト名がありません。そのため Servo は要求に応答せず破棄してしまいます。このとき `navigator.gpu` は存在したままであり、`requestAdapter()` が返す Promise は解決も拒否もされずハング（待機状態）します。WebGPU を使うページは、必ずローカル HTTP サーバー等から配信してください。

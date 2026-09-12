@@ -368,14 +368,16 @@ WebGPU output also renders onto the same shared texture as WebGL.
 | macOS / Metal | Works |
 | macOS / Vulkan (MoltenVK) | Compute works (canvas rendering unverified) |
 | Linux / Vulkan | Works |
-| Android | No adapter available (unsupported) |
+| Android / Compatibility | Works, with a patched wgpu-core (see below) |
 
 `ServoServer.enable_webgpu` toggles the `dom_webgpu_enabled` preference (default: enabled).
 Enabling Cargo's `webgpu` feature links wgpu and naga into the binary regardless of whether a page uses them.
 
-**Android cannot acquire a WebGPU adapter.**
-`servo-webgpu` unconditionally configures its wgpu instance with `STRICT_WEBGPU_COMPLIANCE`. This flag requires every adapter to satisfy all items in `DownlevelFlags::compliant()`. One requirement is `SURFACE_VIEW_FORMATS`, which wgpu derives from `VK_KHR_swapchain_mutable_format` and explicitly documents as unsupported on Android. Consequently, all adapters are discarded and JavaScript's `requestAdapter()` returns `null`.
-This flag pertains to presenting swapchain images through alternate view formats, a feature unnecessary for this integration since Servo renders offscreen. Other extension features are unaffected: on the same device, the demo runs through `android-ahardwarebuffer`, WebGL pages render normally, and self-checks pass.
+**Android needs a patched wgpu-core.**
+`servo-webgpu` unconditionally configures its wgpu instance with `STRICT_WEBGPU_COMPLIANCE`. This flag requires every adapter to satisfy all items in `DownlevelFlags::compliant()`. One requirement is `SURFACE_VIEW_FORMATS`, which wgpu derives from `VK_KHR_swapchain_mutable_format` and explicitly documents as unsupported on Android. Left alone, all adapters are discarded and JavaScript's `requestAdapter()` returns `null`.
+The flag only governs textures returned by `Surface::get_current_texture`, and Servo never creates a wgpu `Surface`. `patches/wgpu-core-30.0.1-android.patch` leaves that one flag out on Android, and `scripts/patch-wgpu-core.sh` applies it to a copy of the crate and points cargo at the copy. CI and the release run the script before building for Android; every other build uses wgpu-core as published. Both demo pages were verified on an Adreno 710 running Android 14. The upstream report is [servo/servo#48024](https://github.com/servo/servo/issues/48024).
+For a local Android build, run `./scripts/patch-wgpu-core.sh` before `./scripts/build.sh --android`. It leaves `.cargo/config.toml` behind, and every cargo command in the checkout uses the patched copy until that file is deleted.
+`Cargo.toml` holds wgpu-core at 30.0.1, the version the patch is written against. When that version is moved, the script fails until the patch is rewritten.
 
 **`file://` pages cannot use WebGPU.**
 `Constellation::handle_wgpu_request` retrieves the page host from `registered_domain_name`. Because `file://` pages have an opaque origin and no host, Servo discards the request without responding. `navigator.gpu` remains present, but the Promise returned by `requestAdapter()` neither resolves nor rejects, hanging indefinitely. Always serve WebGPU pages over HTTP:
