@@ -46,6 +46,67 @@ const GL_TEXTURE_TILING_EXT: u32 = 0x9580;
 const GL_DEDICATED_MEMORY_OBJECT_EXT: u32 = 0x9581;
 const GL_OPTIMAL_TILING_EXT: i32 = 0x9584;
 const GL_HANDLE_TYPE_OPAQUE_FD_EXT: u32 = 0x9586;
+const GL_DEVICE_UUID_EXT: u32 = 0x9597;
+const GL_UUID_SIZE_EXT: usize = 16;
+
+/// Refuse the import when Godot and Servo are not on the same GPU.
+///
+/// Memory shared through an fd belongs to one device. Godot picks its device by
+/// type score, or by whatever `--gpu-index` says; Servo's GL device is whatever
+/// surfman's EGL display resolved to, and surfman asks for the PRIME one
+/// (`DRI_PRIME=1`) with no way to name a GPU. On a machine with two of them the
+/// two can differ, and an import across devices fails in whatever way the driver
+/// happens to choose.
+///
+/// Both sides report the same sixteen bytes for the same physical device —
+/// Vulkan as `deviceUUID`, GL as `GL_DEVICE_UUID_EXT` — so the mismatch can be
+/// named before anything is allocated, and the bridge falls back to CPU
+/// readback with a reason. Where either side cannot answer, nothing is checked:
+/// a guess here would turn a working path into a refused one.
+fn same_device(vulkan: &VulkanDevice, context: &GodotRenderingContext) -> Result<(), String> {
+    let (Some(godot), Some(servo)) = (vulkan.device_uuid(), gl_device_uuid(context)) else {
+        return Ok(());
+    };
+    if godot == servo {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Godot renders on GPU {} and Servo draws on {}. Put both on the same one: \
+         Godot takes --gpu-index, and Servo's GL device follows DRI_PRIME on Mesa",
+        uuid_text(&godot),
+        uuid_text(&servo),
+    ))
+}
+
+/// The UUID of the device Servo's GL context runs on.
+///
+/// `glGetUnsignedBytevEXT` comes with `GL_EXT_memory_object`, which this path
+/// needs anyway, so a driver without it has already been reported by
+/// [`MemoryObjectExt::load`].
+fn gl_device_uuid(context: &GodotRenderingContext) -> Option<[u8; GL_UUID_SIZE_EXT]> {
+    let device = context.device();
+    let gl_context = context.context_mut();
+    let pointer = device.get_proc_address(&gl_context, "glGetUnsignedBytevEXT");
+    if pointer.is_null() {
+        return None;
+    }
+
+    // SAFETY: the entry point, with the signature the specification gives it,
+    // called with Servo's context current and a buffer of the size the token
+    // asks for.
+    unsafe {
+        let get_unsigned_bytev: unsafe extern "C" fn(u32, *mut u8) = std::mem::transmute(pointer);
+        let mut uuid = [0u8; GL_UUID_SIZE_EXT];
+        get_unsigned_bytev(GL_DEVICE_UUID_EXT, uuid.as_mut_ptr());
+        Some(uuid)
+    }
+}
+
+/// A UUID as the hex string both APIs' tools print.
+fn uuid_text(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
 
 /// The `GL_EXT_memory_object` entry points, resolved through surfman.
 ///
@@ -116,6 +177,7 @@ impl SharedImage {
         context
             .make_current_public()
             .map_err(|error| format!("make_current failed: {error:?}"))?;
+        same_device(vulkan, context)?;
 
         // SAFETY: a straight sequence of Vulkan and GL calls with Servo's context
         // current. Everything already allocated is released before returning on
