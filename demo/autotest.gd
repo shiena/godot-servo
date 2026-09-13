@@ -5,7 +5,7 @@ extends Node
 ## synthetic mouse and touch events there, and watches for `bridge_event` coming
 ## back. Also checks that the wheel and a finger drag scroll the page.
 ##
-##     Godot --path demo --quit-after 900 -- --scene autotest
+##     godot --path . res://demo/autotest.tscn
 ##
 ## Results go to standard output. Exit code 0 when everything passed.
 
