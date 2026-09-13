@@ -149,21 +149,22 @@ The self-check (`-Test`) runs through an end-to-end suite of extension features 
 --- godot-servo self check ---
   path: d3d12-shared-nt-handle
   OK   [  0.2s] bridge_event (godot.emit)  (expected 'ready')
-  OK   [  0.5s] evaluate_javascript / script_result  (button at (96.2, 189.4))
+  OK   [  0.5s] evaluate_javascript / script_result  (button at (96.16666, 189.4))
   OK   [  0.6s] click -> onclick -> bridge_event  (expected 'buy')
-  OK   [  0.7s] touch tap -> onclick -> bridge_event  (expected 'buy')
-  OK   [  2.5s] touch drag -> scroll  (scrollTop 0 -> 476)
+  OK   [  0.6s] touch tap -> onclick -> bridge_event  (expected 'buy')
+  OK   [  2.4s] touch drag -> scroll  (scrollTop 0 -> 476)
   OK   [  2.9s] focus input -> ime_requested  (caret [P: (28.0, 509.0), S: (220.0, 36.0)])
   OK   [  3.4s] ime composition -> input value  (value '日本語')
   OK   [  4.0s] os ime sequence -> committed once  (value '日本')
-  OK   [  4.1s] alert -> dialog_alert  (message 'hello from the page')
-  OK   [  4.4s] respond_to_dialog releases the page  (no pending)
+  OK   [  4.0s] alert -> dialog_alert  (message 'hello from the page')
+  OK   [  4.3s] respond_to_dialog releases the page  (no pending)
   OK   [  4.9s] confirm -> respond_to_dialog(true)  (value true)
-  OK   [  5.0s] prompt -> dialog_prompt  (default 'hero')
+  OK   [  4.9s] prompt -> dialog_prompt  (default 'hero')
   OK   [  5.5s] prompt -> respond_to_dialog(text)  (value 'godot')
-  OK   [  5.6s] select -> select_element_requested  (4 options, last group 'Advanced')
+  OK   [  5.5s] select -> select_element_requested  (4 options, last group 'Advanced')
   OK   [  6.1s] respond_to_select sets the value  (value 'sage')
-  OK   [  7.3s] wheel -> scroll  (scrollTop 0 -> 608)
+  OK   [  7.2s] wheel -> scroll  (scrollTop 0 -> 608)
+  OK   [  8.8s] ctrl+C copies the selection  (clipboard 'clip')
 --- 0 failed ---
 ```
 
