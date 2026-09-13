@@ -210,8 +210,8 @@ browser.frame_updated.connect(func() -> void:
 browser.feed_input(event, local_position)
 
 # Receive events from the web page
-browser.bridge_event.connect(func(name: String, payload: String) -> void:
-    print(name, " ", payload)
+browser.bridge_event.connect(func(event_name: String, payload: String) -> void:
+    print(event_name, " ", payload)
 )
 ```
 
