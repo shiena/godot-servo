@@ -2317,7 +2317,6 @@ dependencies = [
  "surfman",
  "tikv-jemalloc-sys",
  "url",
- "wgpu-core",
  "winapi",
  "windows 0.62.2",
  "wio",

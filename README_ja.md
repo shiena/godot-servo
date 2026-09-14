@@ -378,7 +378,7 @@ Cargo の `webgpu` フィーチャを有効にすると、ページ側で使う�
 `servo-webgpu` は、wgpu インスタンスの生成時に `STRICT_WEBGPU_COMPLIANCE` を無条件で指定します。このフラグはすべてのアダプタに対して `DownlevelFlags::compliant()` の全項目を要求します。その中の 1 つに `SURFACE_VIEW_FORMATS` がありますが、wgpu はこれを `VK_KHR_swapchain_mutable_format` の有無から判定しており、Android では使えないと明記しています。そのままではアダプタがすべて除外され、JavaScript の `requestAdapter()` は `null` を返します。
 このフラグが関わるのは `Surface::get_current_texture` が返すテクスチャだけで、Servo は wgpu の `Surface` を作りません。`patches/wgpu-core-30.0.1-android.patch` は Android でだけこのフラグを要求から外すパッチで、`scripts/patch-wgpu-core.sh` がそれを crate のコピーに当て、cargo がそのコピーを使うように設定します。CI とリリースは Android 向けのビルドの前にこのスクリプトを実行し、それ以外のビルドは公開されている wgpu-core をそのまま使います。Adreno 710（Android 14）で両方のデモページの動作を確認しました。上流への報告は [servo/servo#48024](https://github.com/servo/servo/issues/48024) です。
 手元で Android 向けにビルドするときは、`./scripts/build.sh --android` の前に `./scripts/patch-wgpu-core.sh` を実行してください。スクリプトは `.cargo/config.toml` を残すので、そのファイルを消すまでは、そのチェックアウトのすべての cargo コマンドがパッチ済みのコピーを使います。
-`Cargo.toml` は wgpu-core を、パッチの対象である 30.0.1 に固定しています。このバージョンを動かすと、パッチを書き直すまでスクリプトが失敗します。
+パッチのファイル名には、対象の wgpu-core のバージョン（30.0.1）が入っています。wgpu-core は Servo の依存として入ってくるもので、`Cargo.toml` はこのバージョンに固定していません。そのため、Servo を更新するとバージョンが変わることがあります。`Cargo.lock` のバージョンがファイル名と違うと、スクリプトはパッチを当てる前に失敗します。そのときが、Android でまだパッチが必要かを確かめる合図です。必要ならパッチを新しいバージョン向けに書き直し、不要ならパッチとスクリプト、CI とリリースの該当ステップを削除します。
 
 **`file://` のページでは WebGPU を使えません。**
 `Constellation::handle_wgpu_request` は、ページのホスト名を `registered_domain_name` から取得します。しかし `file://` のページはオリジンが不透明（opaque）でホスト名がありません。そのため Servo は要求に応答せず破棄してしまいます。このとき `navigator.gpu` は存在したままであり、`requestAdapter()` が返す Promise は解決も拒否もされずハング（待機状態）します。WebGPU を使うページは、必ずローカル HTTP サーバー等から配信してください。
