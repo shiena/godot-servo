@@ -34,7 +34,7 @@ When no direct sharing path is available, the extension falls back to `glReadPix
 | Windows / Vulkan | ANGLE D3D11 shared texture (NT handle) → `VkImage` | Verified |
 | Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | Verified |
 | macOS / Metal | IOSurface → `MTLTexture` | Verified |
-| Linux / Vulkan | `VkImage` → opaque fd → `GL_EXT_memory_object` | Verified (llvmpipe) |
+| Linux / Vulkan | `VkImage` → opaque fd → `GL_EXT_memory_object` | Verified |
 | Android / Forward+ · Mobile | `VkImage` → opaque fd → `GL_EXT_memory_object` | Verified |
 | macOS / Vulkan (MoltenVK) | IOSurface → `VkImage` | Verified |
 

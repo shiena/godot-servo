@@ -34,7 +34,7 @@
 | Windows / Vulkan | ANGLE の D3D11 共有テクスチャ (NT ハンドル) → `VkImage` | 動作確認済み |
 | Android / Compatibility | `AHardwareBuffer` → `EGLImage` → `ExternalTexture` | 動作確認済み |
 | macOS / Metal | IOSurface → `MTLTexture` | 動作確認済み |
-| Linux / Vulkan | `VkImage` → opaque fd → `GL_EXT_memory_object` | 動作確認済み (llvmpipe) |
+| Linux / Vulkan | `VkImage` → opaque fd → `GL_EXT_memory_object` | 動作確認済み |
 | Android / Forward+ · Mobile | `VkImage` → opaque fd → `GL_EXT_memory_object` | 動作確認済み |
 | macOS / Vulkan (MoltenVK) | IOSurface → `VkImage` | 動作確認済み |
 
