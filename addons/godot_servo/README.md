@@ -29,7 +29,7 @@ These components do not make decisions on behalf of your game: setting URLs, han
 | `cursors.gd` | Maps CSS cursor names from the `cursor_changed` signal to Godot `DisplayServer.CursorShape` constants. (Used automatically by the components above). |
 | `servo_external.gdshader` | Declares `samplerExternalOES`, required by the Android Compatibility (GLES3) path to sample external textures. `servo_external_canvas.gdshader` is the 2D CanvasItem equivalent. |
 
-For complete implementation examples, see `demo/main.tscn` (3D panel) and `demo/flat.tscn` (2D control).
+For complete, working examples, download the demo project (`godot-servo-demo-<version>.zip`) from <https://github.com/shiena/godot-servo/releases>. Its 3D panel scene and 2D control scene use every helper above.
 
 ## Installation
 
@@ -42,16 +42,7 @@ your-project/
     bin/...
 ```
 
-Keep exactly **one copy** of `godot_servo.gdextension`; duplicate manifests will cause Godot to register the extension twice. The `res://` paths inside the manifest are absolute, so libraries resolve identically regardless of location. (In this repository, the manifest sits at the project root only because the root also serves as the demo project next to `project.godot`).
-
-## Building from source
-
-The `bin/` directory contains compiled binaries and is not committed to git. Prebuilt release archives include these binaries; if cloning from source, run the build script once:
-
-```sh
-scripts/build.ps1     # Windows
-./scripts/build.sh    # Linux and macOS
-```
+Keep exactly **one copy** of `godot_servo.gdextension`; duplicate manifests will cause Godot to register the extension twice. The `res://` paths inside the manifest are absolute, so libraries resolve identically regardless of location.
 
 ## License
 
