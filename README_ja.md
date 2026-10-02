@@ -456,7 +456,7 @@ Servo は `servo-allocator` 経由で jemalloc を取り込みますが、jemall
 ## 未対応の機能・制限事項
 
 - **背景ゲーム画面の取り込み（カラーフィードバック）**: CSS の `backdrop-filter` で Web ページの背後にあるゲーム画面をぼかす用途です。Godot 側は `CompositorEffect` で対応できますが、Servo 側に `WebRenderImageHandlerType` を追加するフォークが必要です。
-- **iOS**: surfman も Servo も iOS を対象にしておらず、iOS では JIT コンパイルや `dlopen` が禁止されているため非対応です。
+- **iOS**: 非対応です。Servo が GL コンテキストの作成に使う surfman に iOS 用のバックエンドがありません。
 - **ファイル選択・色選択・コンテキストメニュー**: Servo 側には 3 つとも用意されていますが、本拡張ではシグナル化していません。既定の応答（選択キャンセル）が返されます。
 - **複数の `ServoWebView` ノードの同時配置**: 設計上は単一の `Servo` インスタンスを共有しますが、十分な動作検証は行われていません。
 

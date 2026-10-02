@@ -456,7 +456,7 @@ Servo pulls in jemalloc via `servo-allocator`, which defaults to the initial-exe
 ## Not supported / Limitations
 
 - **Game background blur (scene color feedback)**: Blurring the game behind the page via CSS `backdrop-filter`. While Godot can provide the screen texture via `CompositorEffect`, Servo requires a custom fork adding `WebRenderImageHandlerType`.
-- **iOS**: Unsupported. Neither surfman nor Servo targets iOS, and iOS forbids JIT compilation and dynamic `dlopen`.
+- **iOS**: Unsupported. surfman, which Servo uses to create its GL context, has no iOS backend.
 - **File picker, color picker, and context menu**: While supported internally by Servo, the extension does not expose them as signals (default cancel actions are returned).
 - **Multiple `ServoWebView` nodes simultaneously**: While architecturally designed to share a single `Servo` instance, running multiple simultaneous views has not been thoroughly tested.
 
