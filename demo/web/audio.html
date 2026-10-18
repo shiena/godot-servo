@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Audio</title>
+<style>
+  body { font: 15px/1.6 system-ui, sans-serif; color: #e8ecf4; background: #0b1020; padding: 24px; }
+  button { font: inherit; padding: 6px 14px; margin-right: 8px; }
+</style>
+</head>
+<body>
+<h1>Web Audio</h1>
+<p>A 440 Hz tone through an OscillatorNode, and the same tone decoded from files.</p>
+<p>
+  <button id="start">Start</button>
+  <button id="stop">Stop</button>
+</p>
+<p id="state">idle</p>
+<h2>decodeAudioData</h2>
+<p>
+  <button data-file="tone.wav">WAV</button>
+  <button data-file="tone.flac">FLAC</button>
+  <button data-file="tone.ogg">Ogg Vorbis</button>
+  <button data-file="tone.webm">WebM Vorbis</button>
+  <button data-file="tone.mp3">MP3</button>
+  <button data-file="tone.m4a">AAC</button>
+</p>
+<p id="decoded"></p>
+<h2>&lt;audio&gt;</h2>
+<audio id="element" controls></audio>
+<p id="media"></p>
+<script>
+  let context = null;
+  let oscillator = null;
+
+  function ensureContext() {
+    if (!context) context = new AudioContext();
+    return context;
+  }
+
+  function start() {
+    ensureContext();
+    if (!oscillator) {
+      oscillator = new OscillatorNode(context, { frequency: 440 });
+      const gain = new GainNode(context, { gain: 0.5 });
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start();
+    }
+    context.resume();
+    show();
+  }
+
+  // Results by file name: "ok <rate> <channels> <seconds>" or "error <message>".
+  window.decodeResults = {};
+  const buffers = {};
+
+  // Servo's fetch() has no file: scheme, so a page opened from disk cannot
+  // load the files itself. The self check reads them and passes them in.
+  window.decodeBase64 = (file, base64) =>
+    decode(file, Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)).buffer);
+
+  async function decode(file, data) {
+    delete window.decodeResults[file];
+    try {
+      if (!data) data = await (await fetch('media/' + file)).arrayBuffer();
+      const buffer = await ensureContext().decodeAudioData(data);
+      buffers[file] = buffer;
+      window.decodeResults[file] =
+        'ok ' + buffer.sampleRate + ' ' + buffer.numberOfChannels + ' ' + buffer.duration.toFixed(3);
+    } catch (error) {
+      window.decodeResults[file] = 'error ' + error;
+    }
+    document.getElementById('decoded').textContent = file + ': ' + window.decodeResults[file];
+  }
+
+  const playing = [];
+
+  // Loop a decoded file until stop().
+  window.playDecoded = (file) => {
+    const source = new AudioBufferSourceNode(context, { buffer: buffers[file], loop: true });
+    source.connect(context.destination);
+    source.start();
+    playing.push(source);
+    context.resume();
+    show();
+  };
+
+  for (const button of document.querySelectorAll('[data-file]')) {
+    button.onclick = () => decode(button.dataset.file);
+  }
+
+  // The <audio> element's events, as "<event> <currentTime> <duration>".
+  const element = document.getElementById('element');
+  window.mediaLog = [];
+  for (const name of ['loadedmetadata', 'canplay', 'playing', 'pause', 'seeked', 'ended', 'error']) {
+    element.addEventListener(name, () => {
+      window.mediaLog.push(name + ' ' + element.currentTime.toFixed(2) + ' ' + element.duration.toFixed(2));
+      document.getElementById('media').textContent = window.mediaLog.join(', ');
+    });
+  }
+
+  // Like decodeBase64: a page on disk cannot fetch, so the file comes as a data URL.
+  window.loadElement = (base64, type) => {
+    window.mediaLog = [];
+    element.src = 'data:' + type + ';base64,' + base64;
+  };
+
+  window.mediaStatus = () =>
+    [element.readyState, element.paused, element.currentTime.toFixed(2),
+     element.error ? element.error.code : '-'].join(' ');
+
+  // Suspends the context and drops every sound, so the next start is alone.
+  function stop() {
+    if (oscillator) {
+      oscillator.stop();
+      oscillator = null;
+    }
+    while (playing.length) playing.pop().stop();
+    if (context) context.suspend();
+    show();
+  }
+
+  function show() {
+    document.getElementById('state').textContent = context ? context.state : 'idle';
+  }
+
+  // For the self check: the context's state and clock.
+  window.audioStatus = () =>
+    context ? context.state + ' ' + context.currentTime.toFixed(2) + ' ' + context.sampleRate : 'none';
+
+  document.getElementById('start').onclick = start;
+  document.getElementById('stop').onclick = stop;
+</script>
+</body>
+</html>
