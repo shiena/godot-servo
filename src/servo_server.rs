@@ -14,6 +14,10 @@
 //! Godot emits that signal before any node's `_process`, so every node's input
 //! reaches Servo before the spin and every node paints after it.
 
+// godot-rust 0.5.5's `#[class(init)]` writes `base: base`, which clippy 1.99
+// flags at the struct's `base` field.
+#![allow(clippy::redundant_field_names)]
+
 use std::cell::RefCell;
 
 use godot::classes::{AudioServer, Engine, SceneTree};
@@ -171,7 +175,9 @@ impl ServoServer {
                     .process_frame()
                     .connect_other(&self.to_gd(), Self::pump);
             }
-            None => godot_error!("godot-servo: no SceneTree to pump Servo from"),
+            None => {
+                godot_error!("godot-servo: no SceneTree to pump Servo from");
+            }
         }
 
         self.servo = Some(servo.clone());

@@ -3,6 +3,10 @@
 //! One node corresponds to one Servo `WebView`. The `Servo` behind them all
 //! belongs to `ServoServer`, which also pumps it.
 
+// godot-rust 0.5.5's `#[class(init)]` writes `base: base`, which clippy 1.99
+// flags at the struct's `base` field.
+#![allow(clippy::redundant_field_names)]
+
 use std::rc::Rc;
 
 use dpi::PhysicalSize;
@@ -375,7 +379,9 @@ impl ServoWebView {
         };
         match url::Url::parse(&url.to_string()) {
             Ok(url) => inner.webview.load(url),
-            Err(error) => godot_error!("godot-servo: invalid URL {url}: {error}"),
+            Err(error) => {
+                godot_error!("godot-servo: invalid URL {url}: {error}");
+            }
         }
     }
 
