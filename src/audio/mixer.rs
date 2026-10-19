@@ -86,6 +86,24 @@ impl Mixer {
         }
     }
 
+    /// How many frames every playing source can give before one runs dry.
+    /// `usize::MAX` when none is playing. Sources still waiting to start or
+    /// with nothing more to come do not count.
+    pub fn available(&self) -> usize {
+        self.sources
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|source| {
+                source.playing.load(Ordering::Relaxed)
+                    && source.primed.load(Ordering::Relaxed)
+                    && !source.finished.load(Ordering::Relaxed)
+            })
+            .map(|source| source.frames.lock().unwrap().len())
+            .min()
+            .unwrap_or(usize::MAX)
+    }
+
     /// Mix the next `frames` frames into `out`, replacing what it held.
     pub fn pull(&self, frames: usize, out: &mut Vec<Frame>) {
         out.clear();

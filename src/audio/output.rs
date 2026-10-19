@@ -150,6 +150,11 @@ impl AudioOutput {
         let wanted = target - queued;
         let output_latency = AudioServer::singleton().get_output_latency();
         mixer.set_latency(queued.max(target) as f64 / self.rate + output_latency);
+        // A producer that has not caught up yet is waited for while the
+        // generator still holds a frame's worth: taking its frames now would
+        // leave a hole of silence in the middle of its sound.
+        let floor = (self.peak_frame_seconds * self.rate) as i32 - queued;
+        let wanted = wanted.min(floor.max(mixer.available().min(i32::MAX as usize) as i32));
         if wanted <= 0 {
             return;
         }
