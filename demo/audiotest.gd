@@ -184,8 +184,25 @@ func _check_element() -> void:
 			"mp3": "audio/mpeg"}[file.get_extension()]
 		await _eval("loadElement('%s', '%s')" % [Marshalls.raw_to_base64(data), type])
 		var loaded := await _wait_for_media_event("loadedmetadata", 10.0)
-		var duration := float(loaded.split(" ")[-1]) if loaded != "" else 0.0
-		_check("<audio> opens %s" % file, absf(duration - 2.0) <= DURATION_TOLERANCE, loaded)
+		# Without a Content-Length an Ogg file's duration comes once all of it
+		# has arrived, as a durationchange after loadedmetadata.
+		var duration := 0.0
+		if loaded != "":
+			duration = await _wait_for_duration(2.0)
+		_check("<audio> opens %s" % file, absf(duration - 2.0) <= DURATION_TOLERANCE,
+			"%s, duration %.2f" % [loaded, duration])
+
+
+## The element's duration once it is finite, waiting up to `timeout` seconds.
+## 0 when it stayed unknown.
+func _wait_for_duration(timeout: float) -> float:
+	var deadline := Time.get_ticks_msec() + int(timeout * 1000)
+	while Time.get_ticks_msec() < deadline:
+		var duration := await _eval("String(document.getElementById('element').duration)")
+		if duration.is_valid_float():
+			return float(duration)
+		await get_tree().create_timer(0.05).timeout
+	return 0.0
 
 
 ## The newest `event` in the element's log, waiting up to `timeout` seconds for
