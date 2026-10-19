@@ -104,4 +104,6 @@ aac = ["symphonia/aac", "symphonia/isomp4"]
 # changes nothing, because MSVC keeps debug info in the .pdb rather than the DLL.
 # Debug builds keep their symbols.
 [profile.release]
-strip = true
+# build.rs strips the library through the linker instead. rustc's own strip
+# breaks the library on macOS.
+strip = false
