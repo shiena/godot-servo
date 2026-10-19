@@ -147,6 +147,7 @@ impl ServoServer {
         crate::module_pin::pin();
 
         install_crypto_provider();
+        point_temp_dir_at_app_cache();
         let tree = Engine::singleton()
             .get_main_loop()
             .and_then(|main_loop| main_loop.try_cast::<SceneTree>().ok());
@@ -257,5 +258,18 @@ impl ServoServer {
 fn install_crypto_provider() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    }
+}
+
+/// Servo keeps client storage in a fresh temp directory, and Rust's
+/// `temp_dir()` falls back to `/data/local/tmp` on Android, which apps cannot
+/// write. Building Servo then panics. Point `TMPDIR` at the app's cache instead.
+fn point_temp_dir_at_app_cache() {
+    if !cfg!(target_os = "android") || std::env::var_os("TMPDIR").is_some() {
+        return;
+    }
+    let cache = godot::classes::Os::singleton().get_cache_dir().to_string();
+    if !cache.is_empty() {
+        std::env::set_var("TMPDIR", cache);
     }
 }
