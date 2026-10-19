@@ -8,6 +8,8 @@
 # Without this, running from the CLI without opening the editor loads no extension.
 !/.godot/extension_list.cfg
 *.import
+# The audio self check needs these files as they are, not as AudioStreams.
+!/demo/web/media/*.import
 
 # Build output, placed by scripts/build.ps1 and build.sh.
 /addons/godot_servo/bin/

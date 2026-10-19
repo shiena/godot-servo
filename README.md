@@ -21,6 +21,7 @@ Put web UI directly on in-game panels, forward pointer, touch, and keyboard inpu
 - **In-game texture, not an overlay**: Output is provided as a standard `Texture2D`, so you can apply it directly to 3D panels, materials, or a `TextureRect`.
 - **Mouse, touch, and keyboard input**: Full input forwarding, including IME text composition for Japanese and other languages.
 - **Two-way communication**: Forward user inputs to the page and receive page events back as Godot signals.
+- **Page audio through Godot**: Web Audio, `decodeAudioData`, and `<audio>` play on a Godot audio bus.
 - **Reliable fallback**: If GPU memory sharing is unavailable, it automatically falls back to CPU readback instead of failing to start.
 
 ## Supported platforms
@@ -321,8 +322,10 @@ Servo can only be initialized once per process, so it is created when the first 
 | --- | --- |
 | `enable_webgl2` | Enable WebGL 2.0 (enabled by default) |
 | `enable_webgpu` | Enable WebGPU (enabled by default; see [WebGPU](#webgpu)) |
+| `enable_audio` | Play page audio through Godot (enabled by default; see [Audio](#audio)) |
+| `audio_bus` | The bus page audio plays on (`Master` by default; can be changed at any time) |
 
-These settings are read once when Servo is initialized. Changing them afterward has no effect and produces a warning.
+Except for `audio_bus`, these settings are read once when Servo is initialized. Changing them afterward has no effect and produces a warning.
 Configure them before the first `ServoWebView` starts: in an autoload script's `_init()`, or in any scene node's `_ready()` when the WebView node uses `autostart` (since `autostart` starts the WebView after the entire scene is ready).
 
 ```gdscript
@@ -397,6 +400,43 @@ This extension uses `src/module_pin.rs` to pin the library in process memory and
 Servo initializes wgpu with `InstanceFlags::from_build_config()`, which enables GPU validation whenever `debug_assertions` is active. This causes wgpu's DX12 backend to enable the D3D12 debug layer, which invalidates all previously created D3D12 devices.
 Under the D3D12 renderer, Godot's own device is invalidated and the next allocation fails with `0x887a0005`. Under the Vulkan renderer, Godot's Vulkan device is lost (`VK_ERROR_DEVICE_LOST`) as soon as the DX12 backend is enumerated.
 Release builds do not enable validation and are unaffected. When testing WebGPU on Windows, always use release builds (`-Release`).
+
+## Audio
+
+Servo selects its media backend at compile time. Without its `media-gstreamer` feature, which this extension does not enable, it uses a dummy backend that discards all audio. This extension installs its own backend before Servo starts, and plays everything a page renders through an `AudioStreamPlayer` that `ServoServer` adds to the scene tree root.
+
+| Feature | Status |
+| --- | --- |
+| Web Audio (`AudioContext` and its nodes) | Works |
+| `decodeAudioData` | Works |
+| `<audio>` | Works: play, pause, seek, volume, `muted`, and the `ended` event |
+| `<video>` | Not supported (no sound or picture, as before) |
+| `MediaElementAudioSourceNode`, `MediaStreamAudioDestinationNode` | Not supported |
+| `playbackRate` other than 1 | Not supported (plays at normal speed) |
+
+Decoding uses [symphonia](https://github.com/pdeljanov/Symphonia), written in pure Rust, so no system libraries are needed on any platform.
+
+| Format | Status |
+| --- | --- |
+| WAV, FLAC, Ogg Vorbis, WebM Vorbis, MP3 | Supported |
+| AAC (MP4, M4A) | Requires the `aac` Cargo feature (off by default, because an AAC decoder may require a patent license in some regions) |
+| Opus | Not supported (symphonia has no Opus decoder) |
+
+`canPlayType()` reports these formats accurately, so pages that check it before choosing a source select one that can play.
+
+**Latency.** The audio is fed into an `AudioStreamGenerator` from the main thread once per frame, so it follows the frame rate. The generator holds about two frames of audio, plus a margin that grows if it ever runs dry, giving roughly 65 ms of latency at 60 fps (including Godot's default output latency). If the main thread stalls for longer than this buffer, playback stutters. A custom `AudioStreamPlayback` would decouple the audio from the frame rate. However, Godot calls it from its audio thread, which requires godot-rust's `experimental-threads` feature that the upstream project warns may be unsound, so this extension does not use one.
+
+**Pausing.** While every `ServoWebView` is paused, the page audio pauses with them.
+
+**`file://` pages cannot fetch media.** Servo's `fetch()` and media loading do not support the `file:` scheme. A page opened from disk can still use Web Audio and `data:` URLs. Serve the page over HTTP to load audio files.
+
+**Servo 0.5.0 cannot replay an `<audio>` element after it ends.** When playback reaches the end, the element drops to `HAVE_CURRENT_DATA` and never returns to a state that permits playing again. The `loop` attribute is unaffected, as it seeks back before reaching the end.
+
+The audio self-check plays a tone through each path and inspects the captured samples for gaps:
+
+```sh
+scripts/build.ps1 -Run -Scene audiotest
+```
 
 ## Design notes
 
@@ -480,5 +520,5 @@ Commit messages must follow the [Conventional Commits](https://www.conventionalc
 
 Dual-licensed under either the [Apache License 2.0](LICENSE-APACHE) or [MIT License](LICENSE-MIT) at your option.
 
-- **Servo**: MPL-2.0. This crate depends on Servo without modifying its source code, so file-level copyleft provisions do not extend to your project code.
+- **Servo** and **symphonia**: MPL-2.0. This crate depends on them without modifying their source code, so file-level copyleft provisions do not extend to your project code.
 - **Vendored libraries**: The three.js builds under `demo/web/vendor/` are licensed under the MIT License and retain their original license headers.

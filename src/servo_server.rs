@@ -16,10 +16,11 @@
 
 use std::cell::RefCell;
 
-use godot::classes::{Engine, SceneTree};
+use godot::classes::{AudioServer, Engine, SceneTree};
 use godot::prelude::*;
 use servo::{Preferences, Servo, ServoBuilder};
 
+use crate::audio::{self, AudioOutput};
 use crate::gl_guard::HostContext;
 use crate::waker::GodotWaker;
 use crate::webview_node::ServoWebView;
@@ -72,7 +73,22 @@ pub struct ServoServer {
     #[init(val = true)]
     enable_webgpu: bool,
 
+    /// Play the pages' audio through Godot. Off, Servo drops it, as it did
+    /// before.
+    ///
+    /// Covers Web Audio. The sound goes to an `AudioStreamPlayer` this server
+    /// adds to the root, on [member audio_bus].
+    #[var(set = set_enable_audio)]
+    #[init(val = true)]
+    enable_audio: bool,
+
+    /// The bus the pages' audio plays on. Can be changed at any time.
+    #[var(set = set_audio_bus)]
+    #[init(val = StringName::from("Master"))]
+    audio_bus: StringName,
+
     servo: Option<Servo>,
+    audio: Option<AudioOutput>,
     waker: GodotWaker,
     /// The running `ServoWebView`s. Ids rather than `Gd`s, so a node freed
     /// without leaving the tree is skipped instead of dereferenced.
@@ -93,6 +109,21 @@ impl ServoServer {
         if value != self.enable_webgpu && !self.refuse_change("enable_webgpu") {
             self.enable_webgpu = value;
         }
+    }
+
+    #[func]
+    fn set_enable_audio(&mut self, value: bool) {
+        if value != self.enable_audio && !self.refuse_change("enable_audio") {
+            self.enable_audio = value;
+        }
+    }
+
+    #[func]
+    fn set_audio_bus(&mut self, value: StringName) {
+        if let Some(audio) = &mut self.audio {
+            audio.set_bus(&value);
+        }
+        self.audio_bus = value;
     }
 }
 
@@ -116,6 +147,13 @@ impl ServoServer {
         crate::module_pin::pin();
 
         install_crypto_provider();
+        point_temp_dir_at_app_cache();
+        let tree = Engine::singleton()
+            .get_main_loop()
+            .and_then(|main_loop| main_loop.try_cast::<SceneTree>().ok());
+        if self.enable_audio {
+            self.start_audio(tree.as_ref());
+        }
         let preferences = Preferences {
             dom_webgl2_enabled: self.enable_webgl2,
             dom_webgpu_enabled: self.enable_webgpu,
@@ -127,10 +165,7 @@ impl ServoServer {
             .build();
         servo.setup_logging();
 
-        match Engine::singleton()
-            .get_main_loop()
-            .and_then(|main_loop| main_loop.try_cast::<SceneTree>().ok())
-        {
+        match tree {
             Some(tree) => {
                 tree.signals()
                     .process_frame()
@@ -165,6 +200,10 @@ impl ServoServer {
         // While every node is paused, so is Servo, as it was when each node
         // pumped from its own `_process`. With no node running at all there is
         // still the last WebView's teardown to finish, so a wake-up is answered.
+        if let (Some(audio), Some(mixer)) = (&mut self.audio, audio::Mixer::get()) {
+            audio.pump(mixer, active.is_empty());
+        }
+
         let woken = self.waker.take_pending();
         if active.is_empty() && (!self.webviews.is_empty() || !woken) {
             return;
@@ -186,6 +225,19 @@ impl ServoServer {
             let _host_context = HostContext::capture();
             drop(servo);
         }
+        self.audio = None;
+    }
+
+    /// Put Servo's audio through Godot. Must run before Servo is built.
+    fn start_audio(&mut self, tree: Option<&Gd<SceneTree>>) {
+        let Some(tree) = tree else {
+            godot_error!("godot-servo: no SceneTree to play audio in");
+            return;
+        };
+        audio::install(AudioServer::singleton().get_mix_rate() as u32);
+        if let Some(mixer) = audio::Mixer::get() {
+            self.audio = Some(AudioOutput::new(tree, &self.audio_bus, mixer));
+        }
     }
 
     /// Whether a setting has to stay as it is. Warns when it does.
@@ -206,5 +258,18 @@ impl ServoServer {
 fn install_crypto_provider() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    }
+}
+
+/// Servo keeps client storage in a fresh temp directory, and Rust's
+/// `temp_dir()` falls back to `/data/local/tmp` on Android, which apps cannot
+/// write. Building Servo then panics. Point `TMPDIR` at the app's cache instead.
+fn point_temp_dir_at_app_cache() {
+    if !cfg!(target_os = "android") || std::env::var_os("TMPDIR").is_some() {
+        return;
+    }
+    let cache = godot::classes::Os::singleton().get_cache_dir().to_string();
+    if !cache.is_empty() {
+        std::env::set_var("TMPDIR", cache);
     }
 }

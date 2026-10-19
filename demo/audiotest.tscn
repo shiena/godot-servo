@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cservoaudiotest"]
+
+[ext_resource type="Script" path="res://demo/audiotest.gd" id="1_audiotest"]
+
+[node name="AudioTest" type="Node"]
+script = ExtResource("1_audiotest")
