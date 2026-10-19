@@ -126,6 +126,8 @@ struct Decoding {
     /// When the queue ran out after the last packet.
     drained_at: Option<Instant>,
     last_position: Instant,
+    /// Whether the duration is known, or has been looked for in the whole input.
+    duration_settled: bool,
 }
 
 impl Decoding {
@@ -175,6 +177,7 @@ impl Decoding {
             reported_end: false,
             drained_at: None,
             last_position: Instant::now(),
+            duration_settled: duration.is_some(),
         };
         decoding.consumed_base = decoding.source.consumed();
         decoding.decode(&mut decoder);
@@ -198,6 +201,10 @@ impl Decoding {
                 continue;
             }
             self.source.set_playing(playing);
+            if !self.duration_settled && self.shared.lock().end_of_stream {
+                self.duration_settled = true;
+                self.find_duration();
+            }
 
             if playing && self.last_position.elapsed() >= POSITION_INTERVAL {
                 self.last_position = Instant::now();
@@ -250,6 +257,27 @@ impl Decoding {
                 let _ = self.shared.changed.wait_timeout(state, IDLE_WAIT);
             }
         }
+    }
+
+    /// Some formats (Ogg) learn their duration from the end of the input, and
+    /// without a Content-Length (a data: URL) the length is only known once the
+    /// last byte has arrived. Probe again then, over input that cannot block.
+    fn find_duration(&self) {
+        let reader = GrowingReader {
+            shared: self.shared.clone(),
+            position: 0,
+        };
+        let Some(duration) = StreamDecoder::open(Box::new(reader))
+            .ok()
+            .and_then(|decoder| decoder.duration())
+        else {
+            return;
+        };
+        self.shared.lock().duration = Some(duration);
+        self.shared
+            .send(PlayerEvent::DurationChanged(Some(Duration::from_secs_f64(
+                duration,
+            ))));
     }
 
     fn seek(&mut self, decoder: &mut StreamDecoder, time: f64) {
