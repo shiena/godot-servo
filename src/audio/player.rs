@@ -20,6 +20,7 @@
 use std::collections::VecDeque;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::Range;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -48,6 +49,8 @@ const VIDEO_AHEAD: usize = 4;
 const IDLE_WAIT: Duration = Duration::from_millis(50);
 /// Shortest sleep while an image waits for its time.
 const MIN_WAIT: Duration = Duration::from_millis(1);
+/// How often a reader with an abort flag looks at it while it waits for bytes.
+const ABORT_POLL: Duration = Duration::from_millis(100);
 
 pub type Renderer = Arc<Mutex<dyn VideoFrameRenderer>>;
 
@@ -579,26 +582,46 @@ impl Decoding {
 pub struct GrowingReader {
     shared: Arc<Shared>,
     position: u64,
+    /// When set, a read waiting for bytes gives up once this turns true, for a
+    /// decoder that is being closed while the player is not.
+    abort: Option<Arc<AtomicBool>>,
 }
 
+#[cfg_attr(
+    not(target_os = "linux"),
+    allow(dead_code, reason = "each platform decoder uses its own part of this")
+)]
 impl GrowingReader {
     fn new(shared: Arc<Shared>) -> Self {
         Self {
             shared,
             position: 0,
+            abort: None,
         }
+    }
+
+    /// Another reader over the same bytes, from the start and without an
+    /// abort flag.
+    pub fn duplicate(&self) -> Self {
+        Self::new(self.shared.clone())
+    }
+
+    pub fn with_abort(mut self, abort: Arc<AtomicBool>) -> Self {
+        self.abort = Some(abort);
+        self
+    }
+
+    /// The player has been dropped.
+    pub fn is_closed(&self) -> bool {
+        self.shared.lock().quit
     }
 
     /// The length of the whole file, once it is known: from the response's
     /// Content-Length, or when the last byte has arrived.
-    #[cfg_attr(
-        not(windows),
-        allow(dead_code, reason = "only Media Foundation needs it so far")
-    )]
     pub fn wait_for_length(&self) -> io::Result<u64> {
         let mut state = self.shared.lock();
         loop {
-            if state.quit {
+            if state.quit || self.aborted() {
                 return Err(closed());
             }
             if let Some(length) = state
@@ -607,7 +630,26 @@ impl GrowingReader {
             {
                 return Ok(length);
             }
-            state = self.shared.changed.wait(state).unwrap();
+            state = self.wait(state);
+        }
+    }
+
+    fn aborted(&self) -> bool {
+        self.abort
+            .as_ref()
+            .is_some_and(|abort| abort.load(Ordering::Acquire))
+    }
+
+    fn wait<'a>(&self, state: MutexGuard<'a, State>) -> MutexGuard<'a, State> {
+        match self.abort {
+            Some(_) => {
+                self.shared
+                    .changed
+                    .wait_timeout(state, ABORT_POLL)
+                    .unwrap()
+                    .0
+            }
+            None => self.shared.changed.wait(state).unwrap(),
         }
     }
 }
@@ -620,7 +662,7 @@ impl Read for GrowingReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut state = self.shared.lock();
         loop {
-            if state.quit {
+            if state.quit || self.aborted() {
                 return Err(closed());
             }
             let available = state.data.len() as u64;
@@ -634,7 +676,7 @@ impl Read for GrowingReader {
             if state.end_of_stream {
                 return Ok(0);
             }
-            state = self.shared.changed.wait(state).unwrap();
+            state = self.wait(state);
         }
     }
 }

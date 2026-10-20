@@ -90,6 +90,9 @@ winapi = { version = "0.3", features = ["d3d11", "dxgi"] }
 # Nothing here uses it directly, but naming it as a dependency makes cargo unify
 # the features, which reaches the same jemalloc servo-allocator pulls in.
 tikv-jemalloc-sys = { version = "0.6.1", features = ["disable_initial_exec_tls"] }
+# Opens the system's GStreamer for <video> at run time (src/audio/video/gst.rs),
+# so a system without it still loads the extension.
+libloading = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.1"

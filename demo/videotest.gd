@@ -9,16 +9,18 @@ extends Node
 ##
 ##     godot --path . res://demo/videotest.tscn
 ##
-## Results go to standard output. Exit code 0 when everything passed. Only
-## Windows decodes video so far; elsewhere the check is skipped.
+## Results go to standard output. Exit code 0 when everything passed. A clip
+## whose codecs the platform's decoders refuse in canPlayType() is skipped:
+## what Linux plays depends on the GStreamer plugins installed. Platforms with
+## no video decoder yet skip the whole check.
 
 const WebAssets = preload("res://demo/web_assets.gd")
 
-## File, MIME type, whether it has sound.
+## File, MIME type with codecs, whether it has sound.
 const CLIPS := [
-	["clip.mp4", "video/mp4", true],
-	["clip.webm", "video/webm", true],
-	["clip-silent.mp4", "video/mp4", false],
+	["clip.mp4", 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"', true],
+	["clip.webm", 'video/webm; codecs="vp9, opus"', true],
+	["clip-silent.mp4", 'video/mp4; codecs="avc1.42E01E"', false],
 ]
 const COLORS := ["red", "green", "blue", "white"]
 const SEGMENT_SECONDS := 0.5
@@ -44,23 +46,31 @@ func _ready() -> void:
 
 
 func _run() -> void:
-	if OS.get_name() != "Windows":
+	if not OS.get_name() in ["Windows", "Linux"]:
 		print("videotest: SKIP (no video decoder on %s yet)" % OS.get_name())
 		get_tree().quit(0)
 		return
 	await _wait_for_load()
 
-	for type in ['video/mp4; codecs="avc1.42E01E, mp4a.40.2"']:
-		var answer := await _eval("element.canPlayType('%s')" % type)
-		_check("canPlayType(%s)" % type, answer == "probably", answer)
-	for type in ['video/webm; codecs="vp9, opus"', "video/mp4"]:
-		var answer := await _eval("element.canPlayType('%s')" % type)
-		_check("canPlayType(%s)" % type, answer == "maybe", answer)
+	if OS.get_name() == "Windows":
+		for type in ['video/mp4; codecs="avc1.42E01E, mp4a.40.2"']:
+			var answer := await _eval("element.canPlayType('%s')" % type)
+			_check("canPlayType(%s)" % type, answer == "probably", answer)
+		for type in ['video/webm; codecs="vp9, opus"', "video/mp4"]:
+			var answer := await _eval("element.canPlayType('%s')" % type)
+			_check("canPlayType(%s)" % type, answer == "maybe", answer)
 	var refused := await _eval("element.canPlayType('video/mp4; codecs=\"xyz1\"')")
 	_check("canPlayType of an unknown codec is refused", refused == "", refused)
 
+	var played := 0
 	for clip: Array in CLIPS:
-		await _check_clip(clip[0], clip[1], clip[2])
+		var answer := await _eval("element.canPlayType('%s')" % clip[1])
+		if answer == "":
+			print("SKIP %s (canPlayType(%s) is refused here)" % [clip[0], clip[1]])
+			continue
+		played += 1
+		await _check_clip(clip[0], clip[1].get_slice(";", 0), clip[2])
+	_check("at least one clip plays here", played > 0, "%d of %d" % [played, CLIPS.size()])
 
 	print("videotest: %s" % ("PASS" if failures == 0 else "FAIL (%d)" % failures))
 	get_tree().quit(1 if failures > 0 else 0)
@@ -86,7 +96,7 @@ func _check_clip(file: String, type: String, sound: bool) -> void:
 	_check("%s reaches the screen" % file, shown == "red", shown)
 
 	await _eval("element.play()")
-	var result := await _follow(1.2)
+	var result := await _follow(1.2, 4.0)
 	_check("%s keeps its frames in step with currentTime" % file,
 		result.mismatches == 0 and result.seen.size() >= 3,
 		"%d samples, %d off, saw %s" % [result.samples, result.mismatches, ", ".join(result.seen)])
@@ -113,17 +123,21 @@ func _check_clip(file: String, type: String, sound: bool) -> void:
 	print("  events: %s" % await _eval("mediaLog.join(', ')"))
 
 
-## Sample the frame on show against currentTime for `seconds` while playing.
-func _follow(seconds: float) -> Dictionary:
+## Sample the frame on show against currentTime while playing, until
+## currentTime reaches `until`, or `timeout` seconds have passed. How quickly it
+## gets there depends on the output's latency, which a slow machine makes long.
+func _follow(until: float, timeout: float) -> Dictionary:
 	var samples := 0
 	var mismatches := 0
 	var seen: Array[String] = []
 	var peak := -200.0
-	var deadline := Time.get_ticks_msec() + int(seconds * 1000)
+	var deadline := Time.get_ticks_msec() + int(timeout * 1000)
 	while Time.get_ticks_msec() < deadline:
 		peak = maxf(peak, AudioServer.get_bus_peak_volume_left_db(0, 0))
 		var parts := (await _eval("element.currentTime.toFixed(3) + ' ' + frameColor()")).split(" ")
 		var time := float(parts[0])
+		if time >= until:
+			break
 		var color := parts[1]
 		if not seen.has(color):
 			seen.append(color)

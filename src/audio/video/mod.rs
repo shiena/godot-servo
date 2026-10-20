@@ -1,10 +1,14 @@
 //! Decoding for `<video>`, with the platform's own decoders.
 //!
 //! Each platform's decoder demuxes the file and decodes both its tracks; the
-//! player does the rest. Windows uses Media Foundation. The other platforms
-//! have none yet, and a `<video>` there plays its audio alone, as far as
-//! symphonia can.
+//! player does the rest. Windows uses Media Foundation, and Linux the system's
+//! GStreamer when there is one. The other platforms have none yet, and a
+//! `<video>` there plays its audio alone, as far as symphonia can.
 
+#[cfg(target_os = "linux")]
+mod gst;
+#[cfg(target_os = "linux")]
+mod gstreamer;
 #[cfg(windows)]
 mod media_foundation;
 
@@ -23,7 +27,12 @@ pub fn open(reader: GrowingReader) -> Result<Box<dyn MediaDecoder>, String> {
         media_foundation::MediaFoundationDecoder::open(reader)
             .map(|decoder| Box::new(decoder) as Box<dyn MediaDecoder>)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        gstreamer::GstreamerDecoder::open(reader)
+            .map(|decoder| Box::new(decoder) as Box<dyn MediaDecoder>)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = reader;
         Err("no video decoder on this platform".to_owned())
@@ -36,7 +45,11 @@ pub fn can_play_type(media_type: &str) -> SupportsMediaType {
     {
         media_foundation::can_play_type(media_type)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        gstreamer::can_play_type(media_type)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = media_type;
         SupportsMediaType::No

@@ -22,7 +22,7 @@ Put web UI directly on in-game panels, forward pointer, touch, and keyboard inpu
 - **Mouse, touch, and keyboard input**: Full input forwarding, including IME text composition for Japanese and other languages.
 - **Two-way communication**: Forward user inputs to the page and receive page events back as Godot signals.
 - **Page audio through Godot**: Web Audio, `decodeAudioData`, and `<audio>` play on a Godot audio bus.
-- **`<video>`** (Windows for now): decoded by the platform's own decoders, with its sound on the same bus.
+- **`<video>`** (Windows and Linux for now): decoded by the platform's own decoders, with its sound on the same bus.
 - **Reliable fallback**: If GPU memory sharing is unavailable, it automatically falls back to CPU readback instead of failing to start.
 
 ## Supported platforms
@@ -411,7 +411,7 @@ Servo selects its media backend at compile time. Without its `media-gstreamer` f
 | Web Audio (`AudioContext` and its nodes) | Works |
 | `decodeAudioData` | Works |
 | `<audio>` | Works: play, pause, seek, volume, `muted`, and the `ended` event |
-| `<video>` | Windows: works, with the same controls as `<audio>` (see [Video](#video)). Other platforms: sound only, in the formats below |
+| `<video>` | Windows and Linux: works, with the same controls as `<audio>` (see [Video](#video)). Other platforms: sound only, in the formats below |
 | `MediaElementAudioSourceNode`, `MediaStreamAudioDestinationNode` | Not supported |
 | `playbackRate` other than 1 | Not supported (plays at normal speed) |
 
@@ -446,7 +446,8 @@ A `<video>` is decoded by the platform's own decoders, so no codecs ship with th
 | Platform | Decoder | Formats |
 | --- | --- | --- |
 | Windows | Media Foundation (software decoding) | MP4 and WebM: H.264 and AAC built in; HEVC, VP9, AV1 and Opus through the Store's codec extensions, which most PCs have preinstalled. N editions have no Media Foundation until the Media Feature Pack is installed |
-| macOS, Android, Linux | Not yet (planned: AVFoundation, MediaCodec, and the system's GStreamer) | Sound only, through the audio decoders above |
+| Linux | The system's GStreamer 1.x, opened at run time | Whatever its installed plugins decode. H.264 and AAC need gst-libav (or openh264), which many systems, the Steam Deck among them, leave out; VP8, VP9, Opus and Vorbis come with the base and good plugins. Without GStreamer, `<video>` plays as on the platforms below |
+| macOS, Android | Not yet (planned: AVFoundation and MediaCodec) | Sound only, through the audio decoders above |
 
 **The whole file is held in memory** while it plays, as with `<audio>`. Long or high-bitrate videos use as much memory as their size.
 
