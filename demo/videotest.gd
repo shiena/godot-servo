@@ -11,7 +11,8 @@ extends Node
 ##
 ## Results go to standard output. Exit code 0 when everything passed. A clip
 ## whose codecs the platform's decoders refuse in canPlayType() is skipped:
-## what Linux plays depends on the GStreamer plugins installed. Platforms with
+## what Linux plays depends on the GStreamer plugins installed, and Android on
+## the device. Platforms with
 ## no video decoder yet skip the whole check.
 
 const WebAssets = preload("res://demo/web_assets.gd")
@@ -46,7 +47,7 @@ func _ready() -> void:
 
 
 func _run() -> void:
-	if not OS.get_name() in ["Windows", "Linux"]:
+	if not OS.get_name() in ["Windows", "Linux", "Android"]:
 		print("videotest: SKIP (no video decoder on %s yet)" % OS.get_name())
 		get_tree().quit(0)
 		return
@@ -92,8 +93,7 @@ func _check_clip(file: String, type: String, sound: bool) -> void:
 
 	var first := await _wait_for_color(2.0)
 	_check("%s shows its first frame while paused" % file, first == "red", first)
-	var shown := await _screen_color()
-	_check("%s reaches the screen" % file, shown == "red", shown)
+	await _check_screen("%s reaches the screen" % file, "red")
 
 	await _eval("element.play()")
 	var result := await _follow(1.2, 4.0)
@@ -112,8 +112,7 @@ func _check_clip(file: String, type: String, sound: bool) -> void:
 	var after_seek := await _eval("frameColor()")
 	_check("%s seeks to the frame at the new time" % file,
 		seeked.begins_with("seeked 0.7") and after_seek == "green", "%s, %s" % [seeked, after_seek])
-	shown = await _screen_color()
-	_check("%s shows the sought frame on screen" % file, shown == "green", shown)
+	await _check_screen("%s shows the sought frame on screen" % file, "green")
 
 	await _eval("element.play()")
 	var ended := await _wait_for_media_event("ended", 4.0)
@@ -152,12 +151,27 @@ func _follow(until: float, timeout: float) -> Dictionary:
 	return {"samples": samples, "mismatches": mismatches, "seen": seen, "peak": peak}
 
 
-## The colour in the middle of the video as Godot has it on screen.
+## Check the colour in the middle of the video as Godot has it on screen. Some
+## texture paths cannot be read back (an external texture on Android), and then
+## the check is skipped.
+func _check_screen(label: String, expected: String) -> void:
+	var shown := await _screen_color()
+	if shown == "":
+		print("SKIP %s (the view's texture cannot be read back here)" % label)
+		return
+	_check(label, shown == expected, shown)
+
+
+## The colour in the middle of the video as Godot has it on screen. Empty when
+## the texture cannot be read back.
 func _screen_color() -> String:
 	for i in 5:
 		await get_tree().process_frame
 	var rect := (await _eval("videoRect()")).split(" ")
-	var image := browser.get_texture().get_image()
+	var texture := browser.get_texture()
+	var image := texture.get_image() if texture else null
+	if image == null:
+		return ""
 	var scale := float(image.get_width()) / float(browser.view_size.x)
 	var x := int((float(rect[0]) + float(rect[2]) / 2.0) * scale)
 	var y := int((float(rect[1]) + float(rect[3]) / 2.0) * scale)

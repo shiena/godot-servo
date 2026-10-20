@@ -12,8 +12,6 @@
 use std::ffi::{c_char, c_int, c_uint, c_ulong, c_void, CStr};
 use std::sync::OnceLock;
 
-use libloading::Library;
-
 pub type Gboolean = c_int;
 
 pub const GST_STATE_NULL: c_int = 1;
@@ -90,45 +88,9 @@ pub struct GList {
     pub prev: *mut GList,
 }
 
-macro_rules! libraries {
-    ($($file:literal { $(fn $name:ident($($arg:ty),* $(,)?) $(-> $ret:ty)?;)* })*) => {
-        pub struct Gst {
-            $($(pub $name: unsafe extern "C" fn($($arg),*) $(-> $ret)?,)*)*
-            _libraries: Vec<Library>,
-        }
-
-        impl Gst {
-            fn load() -> Result<Self, String> {
-                let mut libraries = Vec::new();
-                $(
-                    // SAFETY: these are GStreamer's and GLib's own libraries,
-                    // whose initialisers are safe to run in any process.
-                    let library = unsafe { Library::new($file) }
-                        .map_err(|error| format!("{}: {error}", $file))?;
-                    $(
-                        // SAFETY: the signature is the one in GStreamer 1.x's
-                        // headers, and `library` is kept for as long as the
-                        // pointer is.
-                        let $name = unsafe {
-                            *library
-                                .get::<unsafe extern "C" fn($($arg),*) $(-> $ret)?>(
-                                    concat!(stringify!($name), "\0").as_bytes(),
-                                )
-                                .map_err(|error| format!("{}: {error}", stringify!($name)))?
-                        };
-                    )*
-                    libraries.push(library);
-                )*
-                Ok(Self {
-                    $($($name,)*)*
-                    _libraries: libraries,
-                })
-            }
-        }
-    };
-}
-
 libraries! {
+    struct Gst;
+
     "libglib-2.0.so.0" {
         fn g_error_free(*mut GError);
         fn g_free(*mut c_void);

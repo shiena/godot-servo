@@ -588,7 +588,7 @@ pub struct GrowingReader {
 }
 
 #[cfg_attr(
-    not(target_os = "linux"),
+    not(any(target_os = "linux", target_os = "android")),
     allow(dead_code, reason = "each platform decoder uses its own part of this")
 )]
 impl GrowingReader {

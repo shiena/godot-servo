@@ -22,7 +22,7 @@ Put web UI directly on in-game panels, forward pointer, touch, and keyboard inpu
 - **Mouse, touch, and keyboard input**: Full input forwarding, including IME text composition for Japanese and other languages.
 - **Two-way communication**: Forward user inputs to the page and receive page events back as Godot signals.
 - **Page audio through Godot**: Web Audio, `decodeAudioData`, and `<audio>` play on a Godot audio bus.
-- **`<video>`** (Windows and Linux for now): decoded by the platform's own decoders, with its sound on the same bus.
+- **`<video>`** (Windows, Linux and Android for now): decoded by the platform's own decoders, with its sound on the same bus.
 - **Reliable fallback**: If GPU memory sharing is unavailable, it automatically falls back to CPU readback instead of failing to start.
 
 ## Supported platforms
@@ -411,7 +411,7 @@ Servo selects its media backend at compile time. Without its `media-gstreamer` f
 | Web Audio (`AudioContext` and its nodes) | Works |
 | `decodeAudioData` | Works |
 | `<audio>` | Works: play, pause, seek, volume, `muted`, and the `ended` event |
-| `<video>` | Windows and Linux: works, with the same controls as `<audio>` (see [Video](#video)). Other platforms: sound only, in the formats below |
+| `<video>` | Windows, Linux and Android: works, with the same controls as `<audio>` (see [Video](#video)). macOS: sound only, in the formats below |
 | `MediaElementAudioSourceNode`, `MediaStreamAudioDestinationNode` | Not supported |
 | `playbackRate` other than 1 | Not supported (plays at normal speed) |
 
@@ -429,7 +429,7 @@ Decoding uses [symphonia](https://github.com/pdeljanov/Symphonia), written in pu
 
 **Pausing.** While every `ServoWebView` is paused, the page audio pauses with them.
 
-**`file://` pages cannot fetch media.** Servo's `fetch()` and media loading do not support the `file:` scheme. A page opened from disk can still use Web Audio and `data:` URLs. Serve the page over HTTP to load audio files.
+**`file://` pages cannot `fetch()`.** Servo's `fetch()` does not support the `file:` scheme, so a page opened from disk cannot fetch a file to hand to `decodeAudioData`; use a `data:` URL, or serve the page over HTTP. A media element's `src` can be a `file:` URL: a `<video>` plays from one on Windows and Android.
 
 **Servo 0.5.0 cannot replay an `<audio>` element after it ends.** When playback reaches the end, the element drops to `HAVE_CURRENT_DATA` and never returns to a state that permits playing again. The `loop` attribute is unaffected, as it seeks back before reaching the end.
 
@@ -447,7 +447,8 @@ A `<video>` is decoded by the platform's own decoders, so no codecs ship with th
 | --- | --- | --- |
 | Windows | Media Foundation (software decoding) | MP4 and WebM: H.264 and AAC built in; HEVC, VP9, AV1 and Opus through the Store's codec extensions, which most PCs have preinstalled. N editions have no Media Foundation until the Media Feature Pack is installed |
 | Linux | The system's GStreamer 1.x, opened at run time | Whatever its installed plugins decode. H.264 and AAC need gst-libav (or openh264), which many systems, the Steam Deck among them, leave out; VP8, VP9, Opus and Vorbis come with the base and good plugins. Without GStreamer, `<video>` plays as on the platforms below |
-| macOS, Android | Not yet (planned: AVFoundation and MediaCodec) | Sound only, through the audio decoders above |
+| Android | MediaCodec through the NDK, from API 28 (Android 9) | Whatever the device decodes: H.264, VP8, VP9 and AAC everywhere, HEVC and AV1 on most devices from Android 10, Opus and Vorbis. Below API 28, `<video>` plays as on macOS |
+| macOS | Not yet (planned: AVFoundation) | Sound only, through the audio decoders above |
 
 **The whole file is held in memory** while it plays, as with `<audio>`. Long or high-bitrate videos use as much memory as their size.
 
