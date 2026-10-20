@@ -63,9 +63,16 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Direct3D12",
   "Win32_Graphics_Dxgi",
   "Win32_Graphics_Dxgi_Common",
+  "Win32_Media_MediaFoundation",
   "Win32_Security",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
   "Win32_System_LibraryLoader",
+  "Win32_System_Variant",
 ] }
+# For `#[implement]`, whose expansion names `windows_core` directly: the IStream
+# that src/audio/video/media_foundation.rs reads a <video>'s bytes through.
+windows-core = "0.62"
 wio = "0.2"
 # `dxgi` is for the adapter handed to surfman in src/gpu_adapter.rs: surfman
 # takes the `winapi` flavour of `IDXGIAdapter`, and this is where that type

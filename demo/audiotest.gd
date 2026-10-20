@@ -134,7 +134,7 @@ func _check_element() -> void:
 	for type in ['audio/ogg; codecs="vorbis"', "audio/mpeg", "audio/wav"]:
 		var answer := await _eval("element.canPlayType('%s')" % type.replace("'", "\'"))
 		_check("canPlayType(%s)" % type, answer == "probably", answer)
-	for type in ['audio/ogg; codecs="opus"', "video/mp4"]:
+	for type in ['audio/ogg; codecs="opus"', "video/x-flv"]:
 		var answer := await _eval("element.canPlayType('%s')" % type.replace("'", "\'"))
 		_check("canPlayType(%s) is refused" % type, answer == "", answer)
 

@@ -22,6 +22,7 @@ Put web UI directly on in-game panels, forward pointer, touch, and keyboard inpu
 - **Mouse, touch, and keyboard input**: Full input forwarding, including IME text composition for Japanese and other languages.
 - **Two-way communication**: Forward user inputs to the page and receive page events back as Godot signals.
 - **Page audio through Godot**: Web Audio, `decodeAudioData`, and `<audio>` play on a Godot audio bus.
+- **`<video>`** (Windows for now): decoded by the platform's own decoders, with its sound on the same bus.
 - **Reliable fallback**: If GPU memory sharing is unavailable, it automatically falls back to CPU readback instead of failing to start.
 
 ## Supported platforms
@@ -410,7 +411,7 @@ Servo selects its media backend at compile time. Without its `media-gstreamer` f
 | Web Audio (`AudioContext` and its nodes) | Works |
 | `decodeAudioData` | Works |
 | `<audio>` | Works: play, pause, seek, volume, `muted`, and the `ended` event |
-| `<video>` | Not supported (no sound or picture, as before) |
+| `<video>` | Windows: works, with the same controls as `<audio>` (see [Video](#video)). Other platforms: sound only, in the formats below |
 | `MediaElementAudioSourceNode`, `MediaStreamAudioDestinationNode` | Not supported |
 | `playbackRate` other than 1 | Not supported (plays at normal speed) |
 
@@ -436,6 +437,25 @@ The audio self-check plays a tone through each path and inspects the captured sa
 
 ```sh
 scripts/build.ps1 -Run -Scene audiotest
+```
+
+### Video
+
+A `<video>` is decoded by the platform's own decoders, so no codecs ship with the extension and their patent licensing stays with the platform. Frames are converted to BGRA on the CPU and handed to Servo, which draws them like any other image on the page. Sound goes through the same path as `<audio>`.
+
+| Platform | Decoder | Formats |
+| --- | --- | --- |
+| Windows | Media Foundation (software decoding) | MP4 and WebM: H.264 and AAC built in; HEVC, VP9, AV1 and Opus through the Store's codec extensions, which most PCs have preinstalled. N editions have no Media Foundation until the Media Feature Pack is installed |
+| macOS, Android, Linux | Not yet (planned: AVFoundation, MediaCodec, and the system's GStreamer) | Sound only, through the audio decoders above |
+
+**The whole file is held in memory** while it plays, as with `<audio>`. Long or high-bitrate videos use as much memory as their size.
+
+**Media Foundation does not apply MP4 edit lists.** In a file whose video has B-frames, the pictures can trail the sound by the encoder's delay, typically two frames.
+
+The video self-check plays clips that change colour every half second and compares the frame on screen with `currentTime`:
+
+```sh
+scripts/build.ps1 -Run -Scene videotest
 ```
 
 ## Design notes

@@ -16,11 +16,13 @@
 mod backend;
 mod decode;
 mod decoder;
+mod media_decoder;
 mod mixer;
 mod output;
 mod player;
 mod resample;
 mod sink;
+mod video;
 
 use servo_media::ServoMedia;
 

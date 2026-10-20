@@ -1,7 +1,8 @@
 //! The `servo_media::Backend` Servo is given in place of its dummy.
 //!
-//! Only audio output is implemented here. Media players, WebRTC, capture and
-//! media streams are passed to the dummy backend, so they behave as they did.
+//! Audio output and the players behind `<audio>` and `<video>` are implemented
+//! here. WebRTC, capture and media streams are passed to the dummy backend, so
+//! they behave as they did.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -15,7 +16,7 @@ use servo_media::audio::decoder::AudioDecoder;
 use servo_media::audio::sink::AudioSinkError;
 use servo_media::audio::{AudioBackend, AudioStreamReader};
 use servo_media::player::context::PlayerGLContext;
-use servo_media::player::{audio, video, Player, PlayerEvent, StreamType};
+use servo_media::player::{audio, Player, PlayerEvent, StreamType};
 use servo_media::streams::capture::MediaTrackConstraintSet;
 use servo_media::streams::device_monitor::MediaDeviceMonitor;
 use servo_media::streams::registry::MediaStreamId;
@@ -27,8 +28,9 @@ use servo_media_dummy::{DummyBackend, DummyStreamReader};
 use super::decode;
 use super::decoder::SymphoniaAudioDecoder;
 use super::mixer::Mixer;
-use super::player::GodotPlayer;
+use super::player::{GodotPlayer, Renderer};
 use super::sink::GodotAudioSink;
+use super::video;
 
 type Instances = HashMap<ClientContextId, Vec<(usize, Weak<Mutex<dyn MediaInstance>>)>>;
 
@@ -116,13 +118,11 @@ impl Backend for GodotBackend {
         id: &ClientContextId,
         stream_type: StreamType,
         sender: GenericCallback<PlayerEvent>,
-        video_renderer: Option<Arc<Mutex<dyn video::VideoFrameRenderer>>>,
+        video_renderer: Option<Renderer>,
         audio_renderer: Option<Arc<Mutex<dyn audio::AudioRenderer>>>,
         gl_context: Box<dyn PlayerGLContext>,
     ) -> Arc<Mutex<dyn Player>> {
-        // Video is not decoded: a <video> gets the dummy, as before.
-        let mixer = Mixer::get().filter(|_| video_renderer.is_none());
-        let Some(mixer) = mixer else {
+        let Some(mixer) = Mixer::get() else {
             return self.dummy.create_player(
                 id,
                 stream_type,
@@ -138,7 +138,12 @@ impl Backend for GodotBackend {
             );
         }
         let instance_id = self.next_instance_id.fetch_add(1, Ordering::Relaxed);
-        let player = Arc::new(Mutex::new(GodotPlayer::new(instance_id, mixer, sender)));
+        let player = Arc::new(Mutex::new(GodotPlayer::new(
+            instance_id,
+            mixer,
+            sender,
+            video_renderer,
+        )));
         let instance: Arc<Mutex<dyn MediaInstance>> = player.clone();
         self.register(id, instance_id, Arc::downgrade(&instance));
         player
@@ -193,7 +198,19 @@ impl Backend for GodotBackend {
     }
 
     fn can_play_type(&self, media_type: &str) -> SupportsMediaType {
-        decode::can_play_type(media_type)
+        // The surer of the two: symphonia's audio, and the platform's video.
+        match (
+            decode::can_play_type(media_type),
+            video::can_play_type(media_type),
+        ) {
+            (SupportsMediaType::Probably, _) | (_, SupportsMediaType::Probably) => {
+                SupportsMediaType::Probably
+            }
+            (SupportsMediaType::Maybe, _) | (_, SupportsMediaType::Maybe) => {
+                SupportsMediaType::Maybe
+            }
+            _ => SupportsMediaType::No,
+        }
     }
 
     fn mute(&self, id: &ClientContextId, val: bool) {

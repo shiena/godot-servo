@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Video</title>
+<style>
+  body { font: 15px/1.6 system-ui, sans-serif; color: #e8ecf4; background: #0b1020; padding: 24px; margin: 0; }
+  button { font: inherit; padding: 6px 14px; margin-right: 8px; }
+  video { display: block; width: 320px; height: 180px; background: #000; }
+</style>
+</head>
+<body>
+<h1>&lt;video&gt;</h1>
+<p>Two seconds that turn red, green, blue and white every half second, over a 440 Hz tone.</p>
+<p>
+  <button data-file="clip.mp4" data-type="video/mp4">MP4 (H.264, AAC)</button>
+  <button data-file="clip.webm" data-type="video/webm">WebM (VP9, Opus)</button>
+  <button data-file="clip-silent.mp4" data-type="video/mp4">MP4, no audio</button>
+</p>
+<video id="element" controls></video>
+<p id="media"></p>
+<script>
+  const element = document.getElementById('element');
+
+  // A page on disk cannot fetch, so a file comes as a data URL.
+  for (const button of document.querySelectorAll('[data-file]')) {
+    button.onclick = async () => {
+      const response = await fetch('media/' + button.dataset.file).catch(() => null);
+      if (response) {
+        element.src = URL.createObjectURL(await response.blob());
+      } else {
+        element.src = 'media/' + button.dataset.file;
+      }
+      element.play();
+    };
+  }
+
+  // The element's events, as "<event> <currentTime> <duration>".
+  window.mediaLog = [];
+  for (const name of ['loadedmetadata', 'resize', 'canplay', 'playing', 'pause', 'seeked', 'ended', 'error']) {
+    element.addEventListener(name, () => {
+      window.mediaLog.push(name + ' ' + element.currentTime.toFixed(2) + ' ' + element.duration.toFixed(2));
+      document.getElementById('media').textContent = window.mediaLog.join(', ');
+    });
+  }
+
+  window.loadElement = (base64, type) => {
+    window.mediaLog = [];
+    element.src = 'data:' + type + ';base64,' + base64;
+  };
+
+  window.mediaStatus = () =>
+    [element.readyState, element.paused, element.currentTime.toFixed(2),
+     element.error ? element.error.code : '-', element.videoWidth, element.videoHeight].join(' ');
+
+  // The colour in the middle of the current frame, as the name of the nearest
+  // of the four, or "none" before there is one.
+  const canvas = document.createElement('canvas');
+  canvas.width = 16;
+  canvas.height = 16;
+  const context = canvas.getContext('2d');
+  window.frameColor = () => {
+    if (!element.videoWidth) return 'none';
+    context.clearRect(0, 0, 16, 16);
+    context.drawImage(element, element.videoWidth / 2 - 8, element.videoHeight / 2 - 8, 16, 16, 0, 0, 16, 16);
+    const [r, g, b, a] = context.getImageData(8, 8, 1, 1).data;
+    return colorName(r, g, b, a);
+  };
+
+  // Shared with the self check, which reads the same colours off the screen.
+  window.colorName = (r, g, b, a) => {
+    if (a < 128) return 'none';
+    const colors = { red: [255, 0, 0], green: [0, 255, 0], blue: [0, 0, 255], white: [255, 255, 255] };
+    let best = 'other';
+    let bestDistance = 60 * 60 * 3;
+    for (const [name, [cr, cg, cb]] of Object.entries(colors)) {
+      const distance = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2;
+      if (distance < bestDistance) {
+        best = name;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  };
+
+  // Where the video sits on the page, for the self check's screen reads.
+  window.videoRect = () => {
+    const rect = element.getBoundingClientRect();
+    return [rect.left, rect.top, rect.width, rect.height].map(Math.round).join(' ');
+  };
+</script>
+</body>
+</html>

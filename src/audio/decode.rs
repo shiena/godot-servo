@@ -14,6 +14,8 @@ use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::units::{self, Time, TimeBase, Timestamp};
 
+use super::media_decoder::{AudioChunk, MediaDecoder};
+
 /// One audio track, decoded a packet at a time into planar `f32`.
 pub struct StreamDecoder {
     format: Box<dyn FormatReader>,
@@ -22,13 +24,6 @@ pub struct StreamDecoder {
     duration: Option<f64>,
     planes: Vec<Vec<f32>>,
     rate: u32,
-}
-
-/// What [`StreamDecoder::next`] returns: one packet's worth of samples.
-pub struct Decoded<'a> {
-    pub rate: u32,
-    /// One slice per channel, all the same length.
-    pub planes: &'a [Vec<f32>],
 }
 
 impl StreamDecoder {
@@ -80,13 +75,8 @@ impl StreamDecoder {
         })
     }
 
-    /// Length in seconds, when the container says.
-    pub fn duration(&self) -> Option<f64> {
-        self.duration
-    }
-
     /// The next packet's samples. `None` at the end of the stream.
-    pub fn next(&mut self) -> Result<Option<Decoded<'_>>, String> {
+    pub fn next(&mut self) -> Result<Option<AudioChunk<'_>>, String> {
         loop {
             let packet = match self.format.next_packet() {
                 Ok(Some(packet)) => packet,
@@ -108,9 +98,10 @@ impl StreamDecoder {
                     }
                     self.rate = buffer.spec().rate();
                     buffer.copy_to_vecs_planar::<f32>(&mut self.planes);
-                    return Ok(Some(Decoded {
+                    return Ok(Some(AudioChunk {
                         rate: self.rate,
                         planes: &self.planes,
+                        time: None,
                     }));
                 }
                 // A damaged packet is skipped, as players do.
@@ -147,6 +138,24 @@ impl StreamDecoder {
     }
 }
 
+impl MediaDecoder for StreamDecoder {
+    fn duration(&self) -> Option<f64> {
+        self.duration
+    }
+
+    fn has_audio(&self) -> bool {
+        true
+    }
+
+    fn next_audio(&mut self) -> Result<Option<AudioChunk<'_>>, String> {
+        self.next()
+    }
+
+    fn seek(&mut self, seconds: f64) -> Result<Option<f64>, String> {
+        StreamDecoder::seek(self, seconds).map(Some)
+    }
+}
+
 /// Decode a whole file held in memory. Returns the sample rate and one vector
 /// per channel.
 pub fn decode_all(data: Vec<u8>) -> Result<(u32, Vec<Vec<f32>>), String> {
@@ -169,14 +178,7 @@ pub fn decode_all(data: Vec<u8>) -> Result<(u32, Vec<Vec<f32>>), String> {
 /// How sure the decoders here are that they can play `media_type`, a MIME type
 /// with optional parameters such as `audio/ogg; codecs="vorbis"`.
 pub fn can_play_type(media_type: &str) -> SupportsMediaType {
-    let mut parts = media_type.split(';');
-    let mime = parts.next().unwrap_or("").trim().to_ascii_lowercase();
-    let codecs: Vec<String> = parts
-        .filter_map(|part| part.trim().strip_prefix("codecs="))
-        .flat_map(|list| list.trim_matches('"').split(','))
-        .map(|codec| codec.trim().to_ascii_lowercase())
-        .filter(|codec| !codec.is_empty())
-        .collect();
+    let (mime, codecs) = split_media_type(media_type);
 
     // Sure when every codec named is one the decoders here play. With none
     // named, sure only for a type that always holds the same codec; a container
@@ -212,4 +214,17 @@ pub fn can_play_type(media_type: &str) -> SupportsMediaType {
         "audio/mp4" | "audio/x-m4a" => by_codecs(&["mp4a.40.2", "mp4a.40.5", "mp4a.40.29"], false),
         _ => SupportsMediaType::No,
     }
+}
+
+/// A MIME type and the codecs its `codecs` parameter names, both lowercased.
+pub fn split_media_type(media_type: &str) -> (String, Vec<String>) {
+    let mut parts = media_type.split(';');
+    let mime = parts.next().unwrap_or("").trim().to_ascii_lowercase();
+    let codecs = parts
+        .filter_map(|part| part.trim().strip_prefix("codecs="))
+        .flat_map(|list| list.trim_matches('"').split(','))
+        .map(|codec| codec.trim().to_ascii_lowercase())
+        .filter(|codec| !codec.is_empty())
+        .collect();
+    (mime, codecs)
 }
