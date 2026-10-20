@@ -353,7 +353,7 @@ impl MediaDecoder for GstreamerDecoder {
             let rate = caps_int(gst, caps, c"rate").unwrap_or(0).max(0) as u32;
             let channels = caps_int(gst, caps, c"channels").unwrap_or(1).max(1) as usize;
             let buffer = (gst.gst_sample_get_buffer)(sample);
-            let time = timestamp((*buffer).pts);
+            let time = stream_time(gst, sample, (*buffer).pts);
 
             // Stereo at most: the mixer takes the first two channels.
             self.planes.resize(channels.min(2), Vec::new());
@@ -393,7 +393,7 @@ impl MediaDecoder for GstreamerDecoder {
             let width = caps_int(gst, caps, c"width").unwrap_or(0).max(0) as usize;
             let height = caps_int(gst, caps, c"height").unwrap_or(0).max(0) as usize;
             let buffer = (gst.gst_sample_get_buffer)(sample);
-            let time = timestamp((*buffer).pts).unwrap_or(self.last_video_end);
+            let time = stream_time(gst, sample, (*buffer).pts).unwrap_or(self.last_video_end);
             let duration = timestamp((*buffer).duration).unwrap_or(DEFAULT_FRAME_SECONDS);
 
             let mut pixels = Vec::new();
@@ -456,6 +456,26 @@ impl MediaDecoder for GstreamerDecoder {
 
 fn timestamp(nanoseconds: u64) -> Option<f64> {
     (nanoseconds != gst::GST_CLOCK_TIME_NONE).then(|| nanoseconds as f64 / gst::GST_SECOND)
+}
+
+/// Where a buffer sits in the media's own time. Its timestamp alone is not
+/// that: qtdemux applies an MP4 edit list through the segment instead, so a
+/// file whose video starts two frames into its track stamps the first frame
+/// two frames late.
+///
+/// # Safety
+///
+/// `sample` is a live sample.
+unsafe fn stream_time(gst: &Gst, sample: *mut c_void, pts: u64) -> Option<f64> {
+    let segment = (gst.gst_sample_get_segment)(sample);
+    if segment.is_null() || pts == gst::GST_CLOCK_TIME_NONE {
+        return timestamp(pts);
+    }
+    timestamp((gst.gst_segment_to_stream_time)(
+        segment,
+        gst::GST_FORMAT_TIME,
+        pts,
+    ))
 }
 
 /// # Safety

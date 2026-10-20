@@ -168,6 +168,8 @@ libraries! {
         fn gst_message_parse_error(*mut c_void, *mut *mut GError, *mut *mut c_char);
         fn gst_sample_get_buffer(*mut c_void) -> *mut GstBuffer;
         fn gst_sample_get_caps(*mut c_void) -> *mut c_void;
+        fn gst_sample_get_segment(*mut c_void) -> *const c_void;
+        fn gst_segment_to_stream_time(*const c_void, c_int, u64) -> u64;
         fn gst_buffer_new_allocate(*mut c_void, usize, *mut c_void) -> *mut GstBuffer;
         fn gst_buffer_fill(*mut GstBuffer, usize, *const c_void, usize) -> usize;
         fn gst_buffer_map(*mut GstBuffer, *mut GstMapInfo, c_int) -> Gboolean;
