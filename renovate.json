@@ -1,0 +1,22 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["cargo", "github-actions"],
+  "timezone": "Asia/Tokyo",
+  "schedule": ["before 6am on monday"],
+  "dependencyDashboard": true,
+  "automerge": false,
+  "prConcurrentLimit": 3,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "packageRules": [
+    {
+      "description": "Keep Servo and its media trait dependencies on matching releases.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["servo", "servo-base", "servo-media", "servo-media-dummy"],
+      "groupName": "Servo"
+    }
+  ]
+}
