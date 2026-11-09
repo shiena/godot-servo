@@ -276,7 +276,7 @@ impl ServoWebView {
             builder = builder.url(url);
         }
         let webview = builder.build();
-        webview.focus();
+        webview.set_focused(true);
         webview.show();
 
         let bridge = bridge::create(&context, size, &_host_context);
@@ -626,26 +626,31 @@ impl ServoWebView {
 
     fn send_composition(&self, state: CompositionState, data: String) {
         if let Some(inner) = self.inner.as_ref() {
-            inner
-                .webview
-                .notify_input_event(ServoInputEvent::Ime(ImeEvent::Composition(
-                    CompositionEvent { state, data },
-                )));
+            let send = |state, data| {
+                inner
+                    .webview
+                    .notify_input_event(ServoInputEvent::Ime(ImeEvent::Composition(
+                        CompositionEvent { state, data },
+                    )));
+            };
+            // Servo 0.8 only changes text on Update. Start begins the composition,
+            // and End clears its selection without inserting the committed text.
+            if state == CompositionState::End {
+                send(CompositionState::Update, data.clone());
+            }
+            send(state, data.clone());
+            if state == CompositionState::Start {
+                send(CompositionState::Update, data);
+            }
         }
     }
 
     /// Read the preedit the OS IME holds and pass it to Servo.
     ///
-    /// An empty preedit means the composition ended, but `End` must not be sent
-    /// here. Servo's `compositionend` assumes `data` carries the committed text;
-    /// given an empty one it only clears the selection and leaves the preedit in
-    /// place (`handle_compositionend` in `text_input.rs`). Feeding the committed
-    /// text in as key events after that would leave both the preedit and the
-    /// commit, doubling the input.
-    ///
-    /// Godot's `ime_get_text()` returns only `GCS_COMPSTR` and never the
-    /// committed text, so the commit is assembled from the key events that
-    /// follow and carried on `End`. `flush_commit()` does the actual send.
+    /// An empty preedit arrives before the committed key events, so defer End
+    /// until those characters have been collected. `send_composition` replaces
+    /// the preedit with the committed text before ending the composition.
+    /// Godot's `ime_get_text()` returns only `GCS_COMPSTR`, not committed text.
     fn sync_preedit(&mut self) {
         let preedit = DisplayServer::singleton().ime_get_text();
         self.feed_ime_preedit(preedit);
@@ -688,10 +693,8 @@ impl ServoWebView {
     /// the latter as key events, within the same frame. By the time `_process`
     /// runs, the committed text is therefore complete.
     ///
-    /// A cancelled composition arrives empty. Servo then leaves the preedit in
-    /// place rather than removing it, since `clear_selection()` only deselects
-    /// as described above, and the composition API offers no way to delete it
-    /// from this side, so it stays as it is.
+    /// A cancelled composition arrives empty, replacing the preedit with an
+    /// empty update before End clears the selection.
     fn flush_commit(&mut self) {
         if !self.awaiting_commit {
             return;
@@ -791,9 +794,9 @@ impl ServoWebView {
         }
 
         let button = match index {
-            GodotMouseButton::LEFT => MouseButton::Left,
-            GodotMouseButton::RIGHT => MouseButton::Right,
-            GodotMouseButton::MIDDLE => MouseButton::Middle,
+            GodotMouseButton::LEFT => MouseButton::Primary,
+            GodotMouseButton::RIGHT => MouseButton::Secondary,
+            GodotMouseButton::MIDDLE => MouseButton::Auxiliary,
             GodotMouseButton::XBUTTON1 => MouseButton::Back,
             GodotMouseButton::XBUTTON2 => MouseButton::Forward,
             _ => return,
