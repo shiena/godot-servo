@@ -13,20 +13,16 @@ godot = { version = "0.5.5", features = ["api-4-4"] }
 # leaves its WebGPU thread running after it shuts down, and Godot unloads this
 # library at exit; src/module_pin.rs is what keeps that from ending the process
 # in an access violation. See the WebGPU section of the README.
-#
-# gpu-allocator is held at a version that takes `windows` 0.62 in Cargo.lock.
-# ipc-channel asks for `windows ^0.61`, and left to itself cargo drags
-# gpu-allocator down to 0.61 with it, which breaks the types it shares with
-# wgpu-hal. `cargo update -p gpu-allocator` moves it back.
-servo = { version = "0.5.0", features = ["webgpu"] }
-surfman = { version = "0.13.0", features = ["chains"] }
+# Web APIs that were unconditional in Servo 0.5 are now opt-in.
+servo = { version = "0.8.0", features = ["brotli-compression-stream", "subtlecrypto", "webgl", "webgpu"] }
+surfman = "0.14.0"
 # Servo's media layer, for the backend in src/audio that plays a page's audio
 # through Godot. Held to the exact version Servo depends on, so the traits
 # implemented there are the ones Servo calls. `servo-base` is only for the
 # callback type in `Backend::create_player`.
-servo-media = "=0.5.0"
-servo-media-dummy = "=0.5.0"
-servo-base = "=0.5.0"
+servo-media = "=0.8.0"
+servo-media-dummy = "=0.8.0"
+servo-base = "=0.8.0"
 # Already built for Servo's WaveShaperNode; reused to bring every source to
 # Godot's mix rate.
 speexdsp-resampler = "0.1"
@@ -54,8 +50,8 @@ log = "0.4"
 # set ("Do not know how to build EGL support for a non-Windows platform."). Cargo
 # allows the same dependency per target, and features are only unified when the
 # target matches.
-servo = { version = "0.5.0", features = ["no-wgl"] }
-surfman = { version = "0.13.0", features = ["sm-angle-default"] }
+servo = { version = "0.8.0", features = ["no-wgl"] }
+surfman = { version = "0.14.0", features = ["sm-angle-default"] }
 
 windows = { version = "0.62", features = [
   "Win32_Foundation",

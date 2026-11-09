@@ -372,16 +372,16 @@ WebGPU output also renders onto the same shared texture as WebGL.
 | macOS / Metal | Works |
 | macOS / Vulkan (MoltenVK) | Compute works (canvas rendering unverified) |
 | Linux / Vulkan | Works |
-| Android / Compatibility | Works, with a patched wgpu-core (see below) |
+| Android / Compatibility | Works, with patched wgpu-types (see below) |
 
 `ServoServer.enable_webgpu` toggles the `dom_webgpu_enabled` preference (default: enabled).
 Enabling Cargo's `webgpu` feature links wgpu and naga into the binary regardless of whether a page uses them.
 
-**Android needs a patched wgpu-core.**
+**Android needs patched wgpu-types.**
 `servo-webgpu` unconditionally configures its wgpu instance with `STRICT_WEBGPU_COMPLIANCE`. This flag requires every adapter to satisfy all items in `DownlevelFlags::compliant()`. One requirement is `SURFACE_VIEW_FORMATS`, which wgpu derives from `VK_KHR_swapchain_mutable_format` and explicitly documents as unsupported on Android. Left alone, all adapters are discarded and JavaScript's `requestAdapter()` returns `null`.
-The flag only governs textures returned by `Surface::get_current_texture`, and Servo never creates a wgpu `Surface`. `patches/wgpu-core-30.0.1-android.patch` leaves that one flag out on Android, and `scripts/patch-wgpu-core.sh` applies it to a copy of the crate and points cargo at the copy. CI and the release run the script before building for Android; every other build uses wgpu-core as published. Both demo pages were verified on an Adreno 710 running Android 14. The upstream report is [servo/servo#48024](https://github.com/servo/servo/issues/48024).
-For a local Android build, run `./scripts/patch-wgpu-core.sh` before `./scripts/build.sh --android`. It leaves `.cargo/config.toml` behind, and every cargo command in the checkout uses the patched copy until that file is deleted.
-The patch's file name carries the wgpu-core version it is written against, 30.0.1. wgpu-core comes in through Servo and `Cargo.toml` does not hold it at that version, so a Servo update can move it. When the version in `Cargo.lock` differs from the file name, the script fails before patching anything. That is the point to check whether Android still needs the patch: rewrite it for the new version if it does, and delete it, the script, and its CI and release steps if it does not.
+The flag only governs textures returned by `Surface::get_current_texture`, and Servo never creates a wgpu `Surface`. `patches/wgpu-types-30.0.1-android.patch` backports the compliance change from [wgpu#10425](https://github.com/gfx-rs/wgpu/pull/10425). It excludes `SURFACE_VIEW_FORMATS` from `DownlevelFlags::compliant()` for all targets using the patched crate. `scripts/patch-wgpu-types.sh` applies the patch to a copy of the crate and points Cargo at that copy. CI and release builds apply it only for Android; other builds use the published crate. The previous workaround was verified on an Adreno 710 running Android 14. The upstream report is [servo/servo#48024](https://github.com/servo/servo/issues/48024).
+For a local Android build, run `./scripts/patch-wgpu-types.sh` before `./scripts/build.sh --android`. It leaves `.cargo/config.toml` behind, and every cargo command in the checkout uses the patched copy until that file is deleted.
+The patch's file name carries the wgpu-types version it is written against, 30.0.1. wgpu-types comes in through Servo and `Cargo.toml` does not hold it at that version, so a Servo update can move it. When the version in `Cargo.lock` differs from the file name, the script fails before patching anything. That is the point to check whether Android still needs the patch: rewrite it for the new version if it does, and delete it, the script, and its CI and release steps if it does not.
 
 **`file://` pages cannot use WebGPU.**
 `Constellation::handle_wgpu_request` retrieves the page host from `registered_domain_name`. Because `file://` pages have an opaque origin and no host, Servo discards the request without responding. `navigator.gpu` remains present, but the Promise returned by `requestAdapter()` neither resolves nor rejects, hanging indefinitely. Always serve WebGPU pages over HTTP:

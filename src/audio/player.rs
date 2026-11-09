@@ -472,6 +472,11 @@ impl Player for GodotPlayer {
         Ok(())
     }
 
+    fn set_download_buffering_enabled(&self, _: bool) -> Result<(), PlayerError> {
+        // This backend always retains downloaded data for seeking and replay.
+        Ok(())
+    }
+
     /// Only normal speed is supported; other rates play at normal speed.
     fn set_playback_rate(&self, rate: f64) -> Result<(), PlayerError> {
         if rate != 1.0 {

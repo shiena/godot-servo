@@ -32,7 +32,7 @@ pub use output::AudioOutput;
 /// `ServoMedia` keeps its backend in a `OnceLock`, and Servo fills it while it
 /// is being built, with the dummy. Whoever fills it first wins, so this waits
 /// until the backend here is in before returning, and Servo's later attempt
-/// finds it taken. That relies on servo 0.5.0 internals; check it again when
+/// finds it taken. That relies on servo 0.8.0 internals; check it again when
 /// Servo is updated.
 pub fn install(output_rate: u32) {
     if !mixer::Mixer::init(output_rate) {
