@@ -1,0 +1,51 @@
+diff --git a/src/limits.rs b/src/limits.rs
+--- a/src/limits.rs
++++ b/src/limits.rs
+@@ -1238,13 +1238,20 @@
+ }
+ 
+ impl DownlevelFlags {
+-    /// All flags that indicate if the backend is WebGPU compliant
++    /// Returns the flags required for an adapter to be WebGPU compliant.
++    ///
++    /// Anisotropic filtering is implementation-defined. Surface view formats
++    /// apply to wgpu surfaces, which do not exactly correspond to WebGPU canvases.
+     #[must_use]
+     pub const fn compliant() -> Self {
+         // We use manual bit twiddling to make this a const fn as `Sub` and `.remove` aren't const
+ 
+         // WebGPU doesn't actually require aniso
+-        Self::from_bits_truncate(Self::all().bits() & !Self::ANISOTROPIC_FILTERING.bits())
++        // Surface view formats only apply to `wgpu::Surface`.
++        Self::from_bits_truncate(
++            Self::all().bits()
++                & !(Self::ANISOTROPIC_FILTERING.bits() | Self::SURFACE_VIEW_FORMATS.bits()),
++        )
+     }
+ }
+ 
+@@ -1265,6 +1272,24 @@
+ mod tests {
+     use super::*;
+     use alloc::{format, string::String, vec::Vec};
++
++    #[test]
++    fn missing_surface_view_formats_is_webgpu_compliant() {
++        let downlevel = DownlevelCapabilities {
++            flags: DownlevelFlags::all() - DownlevelFlags::SURFACE_VIEW_FORMATS,
++            ..Default::default()
++        };
++        assert!(downlevel.is_webgpu_compliant());
++    }
++
++    #[test]
++    fn missing_compute_shaders_is_not_webgpu_compliant() {
++        let downlevel = DownlevelCapabilities {
++            flags: DownlevelFlags::all() - DownlevelFlags::COMPUTE_SHADERS,
++            ..Default::default()
++        };
++        assert!(!downlevel.is_webgpu_compliant());
++    }
+ 
+     fn side_by_side(left: &str, right: &str) -> String {
+         let left_lines: Vec<&str> = left.lines().map(str::trim).collect();

@@ -151,8 +151,8 @@ jobs:
 
       # Without this Android gets no WebGPU adapter; see the script. ci.yaml runs
       # the same step, so a patch that no longer applies fails there first.
-      - name: Patch wgpu-core
-        run: ./scripts/patch-wgpu-core.sh
+      - name: Patch wgpu-types
+        run: ./scripts/patch-wgpu-types.sh
 
       - name: Build and stage the addon
         run: |
