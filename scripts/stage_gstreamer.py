@@ -14,6 +14,15 @@ srtp webrtc opensles androidmedia wasapi wasapi2 mediafoundation osxaudio applem
 pulseaudio alsa pipewire audiobuffersplit proxy id3tag opengl""".split()
 
 
+# The desktop may already have loaded different versions of these libraries.
+# Give the SDK copies private SONAMEs and update every bundled consumer.
+PRIVATE_LINUX_LIBS = {name: "libgodot-servo-" + name[3:] for name in (
+    "libSPIRV-Tools.so", "libSPIRV-Tools-opt.so", "libglib-2.0.so.0",
+    "libgobject-2.0.so.0", "libgio-2.0.so.0", "libgmodule-2.0.so.0",
+    "libgthread-2.0.so.0",
+)}
+
+
 def run(*args):
     return subprocess.check_output(args, text=True).strip()
 
@@ -23,6 +32,10 @@ def stage(platform, sdk, dest):
     plugins.mkdir(parents=True, exist_ok=True)
     suffix = {"windows": ".dll", "macos": ".dylib", "linux": ".so"}[platform]
     prefix = "" if platform == "windows" else "lib"
+    if platform == "linux":
+        # Remove obsolete SDK copies on an incremental build.
+        for name in PRIVATE_LINUX_LIBS:
+            (dest / name).unlink(missing_ok=True)
     for name in PLUGINS:
         plugin = sdk / "lib/gstreamer-1.0" / (prefix + "gst" + name + suffix)
         if plugin.exists():
@@ -54,9 +67,14 @@ def stage(platform, sdk, dest):
                     lib = sdk / "lib/pulseaudio" / name
                 if not lib.is_file():
                     continue
-                target = dest / name
+                staged_name = PRIVATE_LINUX_LIBS.get(name, name) if platform == "linux" else name
+                target = dest / staged_name
+                if staged_name != name:
+                    subprocess.run(["patchelf", "--replace-needed", name, staged_name, binary], check=True)
                 if target != binary and target not in visited and target not in pending:
                     shutil.copy2(lib, target)
+                    if staged_name != name:
+                        subprocess.run(["patchelf", "--set-soname", staged_name, target], check=True)
                     pending.append(target)
                 if platform == "macos" and target != binary:
                     rel = os.path.relpath(target, binary.parent)
