@@ -44,6 +44,10 @@ your-project/
 
 Keep exactly **one copy** of `godot_servo.gdextension`; duplicate manifests will cause Godot to register the extension twice. The `res://` paths inside the manifest are absolute, so libraries resolve identically regardless of location.
 
+## Media playback
+
+Keep the bundled GStreamer libraries and plugins in `bin/` when copying the addon. The manifest lists the files Godot needs to export. Page audio goes directly to the OS output device. Use the media element's `volume` and `muted` properties to control it. To mute a video while keeping its picture, use `<video muted>`. Disabling `ServoServer.enable_audio` also disables video playback.
+
 ## License
 
 Dual-licensed under either the [Apache License 2.0](LICENSE-APACHE) or [MIT License](LICENSE-MIT) at your option.

@@ -21,6 +21,7 @@
 - **オーバーレイではなくゲーム内に描画**: 描画結果は `Texture2D` なので、3D パネル、マテリアル、`TextureRect` などにそのまま貼れます。
 - **マウス・タッチ・キーボード入力**: 日本語などの IME によるテキスト変換入力にも対応。
 - **双方向のやり取り**: 入力をページへ転送し、ページ側のイベントをシグナルで受け取れます。
+- **動画と音声の再生**: 同梱のGStreamerでHTMLの動画・音声とWeb Audioを再生します。
 - **必ず起動するフォールバック**: GPU メモリ共有が使えない環境でも、起動エラーにならず CPU リードバックへ自動で切り替わります。
 
 ## 対応プラットフォーム
@@ -76,14 +77,14 @@ opaque fd（不透明ファイル記述子）は、標準の Godot が最初か�
 
 - **Godot 4.4 以降**: `RenderingDevice.texture_create_from_extension()` と `get_driver_resource()` が GDExtension で使えるようになったのが 4.4 からです。
 - **Rust 1.94 以降**（ソースからビルドする場合）
-- **Android 向けビルド**: Linux または macOS ホスト、**cargo-ndk**、および Android NDK。
+- **Android 向けビルド**: Linux または macOS ホスト、**cargo-ndk**、および Android NDK r27c。
 
 ## リポジトリの構成
 
-リポジトリのルート自体が Godot プロジェクトになっています。クローンして Godot で開くだけでそのまま動作します。
+リポジトリのルート自体が Godot プロジェクトになっています。クローン後、対象OS用のビルドスクリプトを実行してからGodotで開きます。
 
 ```
-godot_servo.gdextension          GDExtension マニフェスト（プロジェクト直下に配置）
+godot_servo.gdextension          ビルド時に生成するGDExtensionマニフェスト
 addons/godot_servo/
   servo_texture_rect.gd          TextureRect に Web ページを表示して操作を通すスクリプト
   servo_panel_3d.gd              上記と同様の処理を 3D の QuadMesh パネルで行うスクリプト
@@ -115,6 +116,10 @@ scripts/build.ps1 -Release        # Windows: リリースビルド
 ./scripts/build.sh --release      # Linux / macOS: リリースビルド
 ./scripts/build.sh --android      # Android (arm64-v8a): cargo-ndk が必要
 ```
+
+ビルドスクリプトは[GStreamer 1.28.9のSDK](https://github.com/shiena/godot-servo-build-deps/releases/tag/gstreamer-1.28.9)を取得し、SHA-256を検証します。キャッシュ先は `~/.cache/godot-servo` です。`GODOT_SERVO_SDK_CACHE` で変更できます。スクリプトは再生に必要なライブラリを配置し、エクスポート用の依存ファイルを記載した `godot_servo.gdextension` を生成します。配布版を使う場合は、アドオンフォルダーを丸ごとコピーします。
+
+WindowsではSDKを現在のユーザー用にインストールします。macOSでは `sudo installer` で公式フレームワークをインストールします。Linux x86_64のビルドには `pkg-config`、`readelf`、`patchelf` が必要です。Android arm64ではNDKでSDKのライブラリを1つのGStreamer共有ライブラリにまとめます。
 
 単に `cargo build` を実行しただけでは、ファイルの配置（ステージング）までは行われません。必ずビルドスクリプトを使ってください。
 スクリプトはライブラリを `addons/godot_servo/bin/` へコピーするだけでなく、mozangle が生成した `libEGL.dll` と `libGLESv2.dll` を、ビルド完了後にクレートの `OUT_DIR` から取り出して配置します。surfman は実行時にファイル名で ANGLE を読み込むため、この 2 つの DLL は拡張 DLL と同じ場所に置く必要があります（`src/angle_loader.rs` が絶対パスで事前ロードします）。
@@ -320,6 +325,7 @@ Servo はプロセスごとに一度しか生成できないため、最初の `
 | プロパティ | 説明 |
 | --- | --- |
 | `enable_webgl2` | WebGL 2.0 を有効にする（既定値: 有効） |
+| `enable_audio` | GStreamerによるメディア再生を有効にする（既定値: 有効）。無効にすると動画も再生できません。 |
 | `enable_webgpu` | WebGPU を有効にする（既定値: 有効。[WebGPU](#webgpu) を参照） |
 
 各設定値は、Servo の初期化時に 1 回だけ読み込まれます。初期化後に変更しようとしても反映されず、警告が出ます。
@@ -397,6 +403,22 @@ Godot は終了処理（`Main::cleanup()`）の終わり近くで GDExtension �
 Servo は wgpu インスタンスを `InstanceFlags::from_build_config()` で生成します。この関数は、`debug_assertions` が有効な場合に GPU バリデーションも有効にします。すると wgpu の DX12 バックエンドが D3D12 のデバッグレイヤーを有効化するため、それより前に生成された既存の D3D12 デバイスがすべて失われてしまいます。
 D3D12 レンダラでは Godot 自身のデバイスがこれに巻き込まれ、次のリソース確保がエラーコード `0x887a0005` で失敗します。また Vulkan レンダラでも、DX12 バックエンドが列挙された瞬間に Godot の Vulkan デバイスが失われます（`VK_ERROR_DEVICE_LOST`）。
 リリースビルドではバリデーションが有効化されないため影響を受けません。Windows で WebGPU を確認する際は、必ずリリースビルド（`-Release`）を使用してください。
+
+## 動画と音声の再生
+
+ServoはHTMLの `<audio>`、`<video>`、Web Audioの再生にGStreamerを使います。Windows、macOS、Linux（Steam Deck）、Android arm64で、WAVとMP4（H.264映像・AAC音声）の再生を確認しました。MP4をダウンロード途中から再生するには、メタデータを先頭に置いてHTTPで配信します。ダウンロード完了前にシークするには、サーバーでバイト範囲リクエストを有効にします。
+
+### 旧版からの移行
+
+ページの音声はOSの出力デバイスに直接送られます。廃止された `ServoServer.audio_bus` への代入は削除します。Godotのオーディオバスでは、ページ音声の音量調整、ミュート、エフェクト処理、録音はできません。HTMLのメディア要素では `volume` と `muted`、Web Audioでは `GainNode` で音量を制御します。すべてのWebViewを一時停止しても音声が止まる保証はありません。ゲームの一時停止に合わせる場合は、ページ側でもメディア要素の `pause()` を呼びます。
+
+`ServoServer.enable_audio` は最初のWebViewが起動する前に設定します。音声だけを消して動画を表示する場合は、有効のまま `<video muted>` を使います。旧版のCargoの `aac` featureは廃止しました。AACは同梱のGStreamerプラグインで再生できます。
+
+デスクトップでビルド後に次のコマンドを実行すると、音声の再生終了、動画の描画、HTTPでの途中再生、シークを確認できます。
+
+```sh
+python scripts/test_media.py godot
+```
 
 ## 設計ノート
 
