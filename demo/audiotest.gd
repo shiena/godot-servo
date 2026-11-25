@@ -61,7 +61,15 @@ func _check_video() -> void:
 	_check("<video> loads the MP4 video track", size == "320x180", size)
 	await _eval("testVideo.play()")
 	await get_tree().create_timer(0.75).timeout
-	var image := browser.get_texture().get_image()
+	var screen := TextureRect.new()
+	screen.texture = browser.get_texture()
+	add_child(screen)
+	screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	await RenderingServer.frame_post_draw
+	var image := get_viewport().get_texture().get_image()
+	if image == null or image.is_empty():
+		_check("<video> renders in the viewport", false, "no image")
+		return
 	var pixel := image.get_pixel(image.get_width() / 2, image.get_height() / 2)
 	var red := pixel.r > 0.7 and pixel.b < 0.2 and pixel.g < 0.2
 	_check("<video> renders red in the page texture", red, str(pixel))

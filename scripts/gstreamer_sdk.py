@@ -66,7 +66,7 @@ def main():
                             "/CURRENTUSER", "/TYPE=devel", f"/DIR={root}"], check=True)
         elif args.platform == "macos":
             for path in files:
-                subprocess.run(["sudo", "installer", "-pkg", str(path), "-target", "/"], check=True)
+                subprocess.run(["sudo", "installer", "-pkg", str(path), "-target", "/"], check=True, stdout=sys.stderr)
         else:
             root.mkdir(parents=True, exist_ok=True)
             subprocess.run(["tar", "-xf", str(files[0]), "-C", str(root)], check=True)
