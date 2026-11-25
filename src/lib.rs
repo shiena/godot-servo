@@ -24,12 +24,12 @@ use godot::init::InitStage;
 use godot::prelude::*;
 
 pub mod angle_loader;
-pub mod audio;
 pub mod bridge;
 pub mod delegate;
 pub mod gl_guard;
 #[cfg(windows)]
 pub mod gpu_adapter;
+mod media;
 pub mod module_pin;
 pub mod rendering_context;
 pub mod servo_server;

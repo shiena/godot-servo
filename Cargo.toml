@@ -18,22 +18,12 @@ godot = { version = "0.5.5", features = ["api-4-4"] }
 # ipc-channel asks for `windows ^0.61`, and left to itself cargo drags
 # gpu-allocator down to 0.61 with it, which breaks the types it shares with
 # wgpu-hal. `cargo update -p gpu-allocator` moves it back.
-servo = { version = "0.5.0", features = ["webgpu"] }
+servo = { version = "0.5.0", features = ["webgpu", "media-gstreamer"] }
 surfman = { version = "0.13.0", features = ["chains"] }
-# Servo's media layer, for the backend in src/audio that plays a page's audio
-# through Godot. Held to the exact version Servo depends on, so the traits
-# implemented there are the ones Servo calls. `servo-base` is only for the
-# callback type in `Backend::create_player`.
+gstreamer = "0.25"
 servo-media = "=0.5.0"
+servo-media-gstreamer = "=0.5.0"
 servo-media-dummy = "=0.5.0"
-servo-base = "=0.5.0"
-# Already built for Servo's WaveShaperNode; reused to bring every source to
-# Godot's mix rate.
-speexdsp-resampler = "0.1"
-# Decodes audio for decodeAudioData and <audio>, in pure Rust. The default set
-# is the royalty-free formats; MP3's patents have expired. AAC and MP4 are behind
-# the `aac` feature below.
-symphonia = { version = "0.6.1", features = ["mp3"] }
 # Only ever used against the device Godot already created. `Entry::load()` opens
 # the platform's Vulkan loader, which every target but macOS has one of: the ICD
 # loader on Windows and Linux, libvulkan on Android. macOS instead resolves
@@ -73,6 +63,7 @@ wio = "0.2"
 winapi = { version = "0.3", features = ["d3d11", "dxgi"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 # Build jemalloc with a TLS model that can be dlopen'd.
 #
 # Servo uses jemalloc through servo-allocator. jemalloc defaults to initial-exec
@@ -92,11 +83,6 @@ objc2-foundation = "0.3.2"
 # Resolves vkGetInstanceProcAddr against the process itself rather than
 # dlopen'ing a second Vulkan loader. See src/bridge/vulkan/device.rs.
 libc = "0.2"
-
-[features]
-# AAC in MP4 (.m4a, .mp4 audio). Off by default: shipping an AAC decoder may need
-# a patent licence, depending on where the game is distributed.
-aac = ["symphonia/aac", "symphonia/isomp4"]
 
 # Strip symbols from release builds. Servo makes the library large enough on its
 # own, and the symbols are of no use to anyone consuming a release. This is what

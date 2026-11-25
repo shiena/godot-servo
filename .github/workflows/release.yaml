@@ -74,6 +74,14 @@ jobs:
         with:
           name: version-commit
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/godot-servo/*/*.exe
+            ~/.cache/godot-servo/*/*.pkg
+            ~/.cache/godot-servo/*/*.tar.*
+          key: gstreamer-${{ runner.os }}-windows-${{ hashFiles('scripts/gstreamer-sdk.json') }}
+
       - name: Build and stage the addon
         shell: pwsh
         run: ./scripts/build.ps1 -Release
@@ -108,7 +116,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxext-dev libgl1-mesa-dev \
-            libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
+            patchelf libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
 
       # After rust-cache on purpose. It keys its cache on Cargo.lock, so bumping the
       # version first would miss the cache and rebuild Servo from scratch.
@@ -116,6 +124,14 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: version-commit
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/godot-servo/*/*.exe
+            ~/.cache/godot-servo/*/*.pkg
+            ~/.cache/godot-servo/*/*.tar.*
+          key: gstreamer-${{ runner.os }}-desktop-${{ hashFiles('scripts/gstreamer-sdk.json') }}
 
       - name: Build and stage the addon
         run: ./scripts/build.sh --release
@@ -154,9 +170,18 @@ jobs:
       - name: Patch wgpu-core
         run: ./scripts/patch-wgpu-core.sh
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/godot-servo/*/*.exe
+            ~/.cache/godot-servo/*/*.pkg
+            ~/.cache/godot-servo/*/*.tar.*
+          key: gstreamer-${{ runner.os }}-android-${{ hashFiles('scripts/gstreamer-sdk.json') }}
+
       - name: Build and stage the addon
         run: |
-          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          sdkmanager "ndk;27.2.12479018"
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           ./scripts/build.sh --release --android
 
       - uses: actions/upload-artifact@v7
@@ -223,7 +248,7 @@ jobs:
           # The .gdextension goes inside the addon. Its res:// paths are absolute,
           # so the file itself can sit anywhere. A second copy at the root would
           # register the same extension twice, so keep exactly one.
-          cp godot_servo.gdextension godot_servo.gdextension.uid "$NAME/addons/godot_servo/"
+          cp godot_servo.gdextension.uid "$NAME/addons/godot_servo/"
           # Every platform the manifest names has to be here. A missing one used to
           # be skipped silently, which shipped a Windows-only archive whose
           # .gdextension still pointed at libraries for the others.
@@ -234,6 +259,7 @@ jobs:
             mkdir -p "$NAME/addons/godot_servo/bin/$platform"
             cp -r "$src/." "$NAME/addons/godot_servo/bin/$platform/"
           done
+          python3 scripts/stage_gstreamer.py manifest "$NAME/addons/godot_servo/godot_servo.gdextension" "$NAME/addons/godot_servo/bin"
           find "$NAME/addons/godot_servo/bin" -type f | sort
           ( cd "$NAME" && zip -r "../$NAME.zip" addons )
           echo "ARCHIVE=$NAME.zip" >> "$GITHUB_ENV"

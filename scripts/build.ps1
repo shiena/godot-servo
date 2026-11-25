@@ -39,6 +39,14 @@ function Die ([string]$m) { Write-Error $m }
 $profileName = if ($Release) { 'release' } else { 'debug' }
 $binDir = Join-Path $repoRoot 'addons\godot_servo\bin\windows'
 
+# The SDK is needed by the Rust bindings at link time.
+if (-not $NoBuild -or $Checks) {
+    $gstRoot = (python "$PSScriptRoot/gstreamer_sdk.py" windows | Select-Object -Last 1)
+    if ($LASTEXITCODE -ne 0 -or -not $gstRoot) { Die 'GStreamer SDK setup failed' }
+    $env:PATH = "$gstRoot/bin;$env:PATH"
+    $env:PKG_CONFIG_PATH = "$gstRoot/lib/pkgconfig;$env:PKG_CONFIG_PATH"
+}
+
 # ------------------------------------------------------------------ Build ---
 if ($Checks) {
         Say 'cargo fmt --check'
@@ -58,7 +66,8 @@ if (-not $NoBuild) {
 }
 
 # -------------------------------------------------------- Place (stage) ---
-$target = Join-Path $repoRoot "target\$profileName"
+$buildRoot = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $repoRoot "target" }
+$target = Join-Path $buildRoot $profileName
 $built = Join-Path $target 'godot_servo.dll'
 if (-not (Test-Path $built)) { Die "Build artifact not found: $built" }
 
@@ -84,6 +93,12 @@ foreach ($dll in 'libEGL.dll', 'libGLESv2.dll') {
     Copy-Item -Force (Join-Path $angleDir $dll) (Join-Path $binDir $dll)
 }
 
+if ($gstRoot) {
+    python "$PSScriptRoot/stage_gstreamer.py" windows "$gstRoot" "$binDir"
+    if ($LASTEXITCODE -ne 0) { Die 'Could not stage GStreamer' }
+    python "$PSScriptRoot/stage_gstreamer.py" manifest godot_servo.gdextension addons/godot_servo/bin
+    if ($LASTEXITCODE -ne 0) { Die 'Could not generate export dependencies' }
+}
 Ok "Placed: $binDir"
 
 # -------------------------------------------------------------------- Run ---

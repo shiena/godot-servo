@@ -30,3 +30,6 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated with the staged SDK dependency list.
+/godot_servo.gdextension

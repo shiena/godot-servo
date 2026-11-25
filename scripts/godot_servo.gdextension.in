@@ -20,10 +20,7 @@ android.release.arm64 = "res://addons/godot_servo/bin/android/arm64-v8a/libgodot
 
 [dependencies]
 
-; ANGLE. Surfman grabs it at runtime with `LoadLibrary("libEGL.dll")`, by name, so
-; it has to sit in the same folder as the extension's DLL (src/angle_loader.rs
-; preloads it by absolute path). scripts/build.* distributes what mozangle built.
-windows.x86_64 = {
-"res://addons/godot_servo/bin/windows/libEGL.dll" : "",
-"res://addons/godot_servo/bin/windows/libGLESv2.dll" : ""
+android.arm64 = {
+"res://addons/godot_servo/bin/android/arm64-v8a/libgstreamer_android.so" : "",
+"res://addons/godot_servo/bin/android/arm64-v8a/libc++_shared.so" : ""
 }
