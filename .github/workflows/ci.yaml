@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -52,7 +54,8 @@ jobs:
 
   windows:
     name: Build and self check (Windows)
-    runs-on: windows-latest
+    # VS 2022 ships STL headers compatible with the runner's libclang.
+    runs-on: windows-2022
     # Building Servo from scratch takes an hour or so. The ceiling sits a little
     # above that, so a stalled self check cannot hold a runner for the default six.
     timeout-minutes: 100
@@ -73,6 +76,14 @@ jobs:
       # clippy and the build go through one call, on the same debug profile.
       # Building Servo on a cold cache takes over an hour, so CI never stacks a
       # release build on top of a debug one. Release is for releases.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/godot-servo/*/*.exe
+            ~/.cache/godot-servo/*/*.pkg
+            ~/.cache/godot-servo/*/*.tar.*
+          key: gstreamer-${{ runner.os }}-windows-${{ hashFiles('scripts/gstreamer-sdk.json') }}
+
       - name: Lint, build, and stage the addon
         shell: pwsh
         run: ./scripts/build.ps1 -Checks
@@ -110,7 +121,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-24.04]
     steps:
       - uses: actions/checkout@v7
 
@@ -121,14 +132,27 @@ jobs:
           cache-on-failure: true
 
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxext-dev libgl1-mesa-dev \
-            libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
+            patchelf clang-18 libclang-18-dev libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
+          # bindgen needs clang's builtin headers to match its loaded libclang.
+          echo "CLANG_PATH=/usr/bin/clang-18" >> "$GITHUB_ENV"
+          echo "LIBCLANG_PATH=/usr/lib/llvm-18/lib" >> "$GITHUB_ENV"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/godot-servo/*/*.exe
+            ~/.cache/godot-servo/*/*.pkg
+            ~/.cache/godot-servo/*/*.tar.*
+          key: gstreamer-${{ runner.os }}-desktop-${{ hashFiles('scripts/gstreamer-sdk.json') }}
 
       - name: Build and stage the addon
-        run: ./scripts/build.sh
+        run: |
+          if [[ "$RUNNER_OS" == macOS ]]; then export CARGO_PROFILE_DEV_STRIP=none; fi
+          ./scripts/build.sh
 
       - uses: actions/upload-artifact@v7
         with:
@@ -167,9 +191,18 @@ jobs:
 
       # The runner has ANDROID_NDK_ROOT as a real environment variable.
       # `${{ env.* }}` only sees the workflow's own env, so copy it across here.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/godot-servo/*/*.exe
+            ~/.cache/godot-servo/*/*.pkg
+            ~/.cache/godot-servo/*/*.tar.*
+          key: gstreamer-${{ runner.os }}-android-${{ hashFiles('scripts/gstreamer-sdk.json') }}
+
       - name: Build and stage the addon
         run: |
-          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           # Android alone is built in release. A debug .so is 1.5 GB, far past
           # what an APK can carry.
           ./scripts/build.sh --release --android

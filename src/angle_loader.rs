@@ -11,14 +11,9 @@
 #[cfg(windows)]
 pub fn preload() {
     use std::os::windows::ffi::OsStrExt;
-    use std::path::PathBuf;
 
     use windows::core::PCWSTR;
-    use windows::Win32::Foundation::HMODULE;
-    use windows::Win32::System::LibraryLoader::{
-        GetModuleFileNameW, GetModuleHandleExW, LoadLibraryW,
-        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-    };
+    use windows::Win32::System::LibraryLoader::LoadLibraryW;
 
     let Some(directory) = self_directory() else {
         return;
@@ -43,28 +38,35 @@ pub fn preload() {
             godot::global::godot_warn!("godot-servo: failed to preload {name}");
         }
     }
+}
 
-    /// The folder this DLL itself sits in.
-    fn self_directory() -> Option<PathBuf> {
-        unsafe {
-            let mut module = HMODULE::default();
-            let anchor = self_directory as *const () as *const u16;
-            GetModuleHandleExW(
-                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
-                    | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                PCWSTR(anchor),
-                &mut module,
-            )
-            .ok()?;
+#[cfg(windows)]
+/// The folder this DLL itself sits in.
+pub(crate) fn self_directory() -> Option<std::path::PathBuf> {
+    use std::path::PathBuf;
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::HMODULE;
+    use windows::Win32::System::LibraryLoader::{
+        GetModuleFileNameW, GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+    };
+    unsafe {
+        let mut module = HMODULE::default();
+        let anchor = self_directory as *const () as *const u16;
+        GetModuleHandleExW(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            PCWSTR(anchor),
+            &mut module,
+        )
+        .ok()?;
 
-            let mut buffer = [0u16; 32768];
-            let length = GetModuleFileNameW(Some(module), &mut buffer) as usize;
-            if length == 0 {
-                return None;
-            }
-            let path = PathBuf::from(String::from_utf16_lossy(&buffer[..length]));
-            path.parent().map(PathBuf::from)
+        let mut buffer = [0u16; 32768];
+        let length = GetModuleFileNameW(Some(module), &mut buffer) as usize;
+        if length == 0 {
+            return None;
         }
+        let path = PathBuf::from(String::from_utf16_lossy(&buffer[..length]));
+        path.parent().map(PathBuf::from)
     }
 }
 

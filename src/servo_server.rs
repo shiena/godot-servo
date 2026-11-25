@@ -20,14 +20,15 @@
 
 use std::cell::RefCell;
 
-use godot::classes::{AudioServer, Engine, SceneTree};
+use godot::classes::{Engine, SceneTree};
 use godot::prelude::*;
 use servo::{Preferences, Servo, ServoBuilder};
 
-use crate::audio::{self, AudioOutput};
 use crate::gl_guard::HostContext;
 use crate::waker::GodotWaker;
 use crate::webview_node::ServoWebView;
+use servo_media::ServoMedia;
+use servo_media_gstreamer::GStreamerBackend;
 
 const SINGLETON_NAME: &str = "ServoServer";
 
@@ -77,22 +78,12 @@ pub struct ServoServer {
     #[init(val = true)]
     enable_webgpu: bool,
 
-    /// Play the pages' audio through Godot. Off, Servo drops it, as it did
-    /// before.
-    ///
-    /// Covers Web Audio. The sound goes to an `AudioStreamPlayer` this server
-    /// adds to the root, on [member audio_bus].
+    /// Enable GStreamer playback. Set before creating the first WebView.
     #[var(set = set_enable_audio)]
     #[init(val = true)]
     enable_audio: bool,
 
-    /// The bus the pages' audio plays on. Can be changed at any time.
-    #[var(set = set_audio_bus)]
-    #[init(val = StringName::from("Master"))]
-    audio_bus: StringName,
-
     servo: Option<Servo>,
-    audio: Option<AudioOutput>,
     waker: GodotWaker,
     /// The running `ServoWebView`s. Ids rather than `Gd`s, so a node freed
     /// without leaving the tree is skipped instead of dereferenced.
@@ -121,14 +112,6 @@ impl ServoServer {
             self.enable_audio = value;
         }
     }
-
-    #[func]
-    fn set_audio_bus(&mut self, value: StringName) {
-        if let Some(audio) = &mut self.audio {
-            audio.set_bus(&value);
-        }
-        self.audio_bus = value;
-    }
 }
 
 impl ServoServer {
@@ -155,9 +138,13 @@ impl ServoServer {
         let tree = Engine::singleton()
             .get_main_loop()
             .and_then(|main_loop| main_loop.try_cast::<SceneTree>().ok());
-        if self.enable_audio {
-            self.start_audio(tree.as_ref());
+        if self.enable_audio && crate::media::initialize() {
+            ServoMedia::init::<GStreamerBackend>();
+        } else {
+            ServoMedia::init::<servo_media_dummy::DummyBackend>();
         }
+        // Servo starts its own backend initializer while building. Wait for our selection.
+        let _ = ServoMedia::get();
         let preferences = Preferences {
             dom_webgl2_enabled: self.enable_webgl2,
             dom_webgpu_enabled: self.enable_webgpu,
@@ -206,10 +193,6 @@ impl ServoServer {
         // While every node is paused, so is Servo, as it was when each node
         // pumped from its own `_process`. With no node running at all there is
         // still the last WebView's teardown to finish, so a wake-up is answered.
-        if let (Some(audio), Some(mixer)) = (&mut self.audio, audio::Mixer::get()) {
-            audio.pump(mixer, active.is_empty());
-        }
-
         let woken = self.waker.take_pending();
         if active.is_empty() && (!self.webviews.is_empty() || !woken) {
             return;
@@ -230,19 +213,6 @@ impl ServoServer {
             // constellation is gone, which makes Servo's GL context current.
             let _host_context = HostContext::capture();
             drop(servo);
-        }
-        self.audio = None;
-    }
-
-    /// Put Servo's audio through Godot. Must run before Servo is built.
-    fn start_audio(&mut self, tree: Option<&Gd<SceneTree>>) {
-        let Some(tree) = tree else {
-            godot_error!("godot-servo: no SceneTree to play audio in");
-            return;
-        };
-        audio::install(AudioServer::singleton().get_mix_rate() as u32);
-        if let Some(mixer) = audio::Mixer::get() {
-            self.audio = Some(AudioOutput::new(tree, &self.audio_bus, mixer));
         }
     }
 

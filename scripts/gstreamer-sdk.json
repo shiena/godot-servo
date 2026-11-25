@@ -1,0 +1,34 @@
+{
+  "version": "1.28.9",
+  "mirror": "shiena/godot-servo-build-deps",
+  "assets": {
+    "windows": [
+      {
+        "url": "https://gstreamer.freedesktop.org/data/pkg/windows/1.28.9/msvc/gstreamer-1.0-msvc-x86_64-1.28.9.exe",
+        "sha256": "ce4008705e8c6fe92803535b82fb3d6551e183f438e6ef26682ac4d0aca61076"
+      }
+    ],
+    "macos": [
+      {
+        "url": "https://gstreamer.freedesktop.org/data/pkg/osx/1.28.9/gstreamer-1.0-1.28.9-universal.pkg",
+        "sha256": "05d27c8e9b4374bbcf1788cf1604bb4b1a4bdcbdc13bc37b67d3a225c8aa86a6"
+      },
+      {
+        "url": "https://gstreamer.freedesktop.org/data/pkg/osx/1.28.9/gstreamer-1.0-devel-1.28.9-universal.pkg",
+        "sha256": "54e27ccc9af096f7f12cff32b6111b7f1b867d968cb8888e80719ad46a97c777"
+      }
+    ],
+    "android": [
+      {
+        "url": "https://gstreamer.freedesktop.org/data/pkg/android/1.28.9/gstreamer-1.0-android-universal-1.28.9.tar.xz",
+        "sha256": "04ca3f41c8fc7359c4f92f3705ffee0533890b1f5ea94a49509f1ede0d241a53"
+      }
+    ],
+    "linux": [
+      {
+        "sha256": "634c20ec872e4cd3201015f8895e7b7386081aa1368d7a935ddc7cfbb2a0190f",
+        "url": "https://github.com/shiena/godot-servo-build-deps/releases/download/gstreamer-1.28.9/gstreamer-1.28.9-linux-x86_64.tar.gz"
+      }
+    ]
+  }
+}

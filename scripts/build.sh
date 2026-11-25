@@ -64,7 +64,7 @@ if [ "$android" = 1 ]; then
 		*)           die "unknown ABI: $abi" ;;
 	esac
 	bin_dir="$repo_root/addons/godot_servo/bin/android/$abi"
-	built_path="$repo_root/target/$triple/$profile/libgodot_servo.so"
+	built_path="${CARGO_TARGET_DIR:-$repo_root/target}/$triple/$profile/libgodot_servo.so"
 	dest_name=libgodot_servo.so
 else
 	case "$(uname -s)" in
@@ -73,61 +73,70 @@ else
 		*)      die "unsupported host: $(uname -s) (use scripts/build.ps1 on Windows)" ;;
 	esac
 	bin_dir="$repo_root/addons/godot_servo/bin/$platform"
-	built_path="$repo_root/target/$profile/$lib_name"
+	built_path="${CARGO_TARGET_DIR:-$repo_root/target}/$profile/$lib_name"
+fi
+
+if [ "$do_build" = 1 ] || [ "$do_checks" = 1 ]; then
+    if [ "$android" = 1 ]; then
+        sdk=$(python3 scripts/gstreamer_sdk.py android)
+        case "$abi" in
+            arm64-v8a) arch=arm64 ;; armeabi-v7a) arch=armv7 ;; *) arch=$abi ;;
+        esac
+        gst_root="$sdk/$arch"
+        gst_android="${CARGO_TARGET_DIR:-$repo_root/target}/gst-android/$abi"
+        python3 scripts/android_gstreamer.py "$gst_root" "$gst_android" "$abi"
+        export PKG_CONFIG_ALLOW_CROSS=1
+        export PKG_CONFIG_LIBDIR="$gst_android/pkgconfig"
+        export PKG_CONFIG_PATH=
+        export CARGO_NDK_PLATFORM=24
+    elif [ "$platform" = macos ] || [ "$platform" = linux ]; then
+        gst_root=$(python3 scripts/gstreamer_sdk.py "$platform")
+        if [ "$platform" = macos ]; then export PATH="$gst_root/bin:$PATH"; fi
+        export PKG_CONFIG_PATH="$gst_root/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+    fi
 fi
 
 # ------------------------------------------------------------------ Build ---
+cargo_cmd=(cargo)
+profile_args=()
+if [ "$profile" = release ]; then
+	profile_args+=(--release)
+fi
+if [ "$android" = 1 ] && { [ "$do_build" = 1 ] || [ "$do_checks" = 1 ]; }; then
+	cargo_cmd+=(ndk -t "$abi")
+	# NDK r23 dropped libgcc in favour of libunwind, but something in the
+	# dependency graph still asks the linker for `-lgcc` and the link fails.
+	# Drop in a stub that redirects to libunwind and put its directory on the
+	# search path.
+	gcc_stub="$repo_root/target/android-libgcc-stub"
+	mkdir -p "$gcc_stub"
+	echo 'INPUT(-lunwind)' > "$gcc_stub/libgcc.a"
+	export RUSTFLAGS="${RUSTFLAGS:-} -L $gcc_stub"
+
+	# bindgen needs libclang. The NDK ships one, which works even where the
+	# distribution's clang is not installed, so point at it when it is there.
+	if [ -z "${LIBCLANG_PATH:-}" ]; then
+		for candidate in "${ANDROID_NDK_HOME:-}"/toolchains/llvm/prebuilt/*/lib \
+		                 "${ANDROID_NDK_HOME:-}"/toolchains/llvm/prebuilt/*/musl/lib; do
+			if [ -e "$candidate/libclang.so" ]; then
+				export LIBCLANG_PATH="$candidate"
+				say "LIBCLANG_PATH=$LIBCLANG_PATH"
+				break
+			fi
+		done
+	fi
+fi
+
 if [ "$do_checks" = 1 ]; then
 	say 'cargo fmt --check'
 	cargo fmt --check || die 'cargo fmt --check failed (run `cargo fmt`)'
 	say 'cargo clippy'
-	# Warnings are errors. CI runs with this flag, so relaxing it here removes the gate.
-	if [ "$profile" = release ]; then
-		cargo clippy --all-targets --release -- -D warnings || die 'cargo clippy failed'
-	else
-		cargo clippy --all-targets -- -D warnings || die 'cargo clippy failed'
-	fi
+	"${cargo_cmd[@]}" clippy --all-targets ${profile_args[@]+"${profile_args[@]}"} -- -D warnings
 fi
 
 if [ "$do_build" = 1 ]; then
-	if [ "$android" = 1 ]; then
-		# NDK r23 dropped libgcc in favour of libunwind, but something in the
-		# dependency graph still asks the linker for `-lgcc` and the link fails.
-		# Drop in a stub that redirects to libunwind and put its directory on the
-		# search path.
-		gcc_stub="$repo_root/target/android-libgcc-stub"
-		mkdir -p "$gcc_stub"
-		echo 'INPUT(-lunwind)' > "$gcc_stub/libgcc.a"
-		export RUSTFLAGS="${RUSTFLAGS:-} -L $gcc_stub"
-
-		# bindgen needs libclang. The NDK ships one, which works even where the
-		# distribution's clang is not installed, so point at it when it is there.
-		if [ -z "${LIBCLANG_PATH:-}" ]; then
-			for candidate in "${ANDROID_NDK_HOME:-}"/toolchains/llvm/prebuilt/*/lib \
-			                 "${ANDROID_NDK_HOME:-}"/toolchains/llvm/prebuilt/*/musl/lib; do
-				if [ -e "$candidate/libclang.so" ]; then
-					export LIBCLANG_PATH="$candidate"
-					say "LIBCLANG_PATH=$LIBCLANG_PATH"
-					break
-				fi
-			done
-		fi
-
-		# Requires cargo-ndk and ANDROID_NDK_HOME.
-		say "cargo ndk -t $abi build ($profile)"
-		if [ "$profile" = release ]; then
-			cargo ndk -t "$abi" build --release
-		else
-			cargo ndk -t "$abi" build
-		fi
-	else
-		say "cargo build ($profile)"
-		if [ "$profile" = release ]; then
-			cargo build --release
-		else
-			cargo build
-		fi
-	fi
+	say "${cargo_cmd[*]} build ($profile)"
+	"${cargo_cmd[@]}" build ${profile_args[@]+"${profile_args[@]}"}
 fi
 
 # ------------------------------------------------------------------ Place ---
@@ -135,6 +144,13 @@ fi
 
 mkdir -p "$bin_dir"
 cp -f "$built_path" "$bin_dir/$dest_name"
+if [ "$android" = 1 ] && [ -n "${gst_android:-}" ]; then
+    cp "$gst_android/libs/$abi/"*.so "$bin_dir/"
+fi
+if [ "$android" = 0 ] && [ -n "${gst_root:-}" ]; then
+    python3 scripts/stage_gstreamer.py "$platform" "$gst_root" "$bin_dir"
+fi
+python3 scripts/stage_gstreamer.py manifest godot_servo.gdextension addons/godot_servo/bin
 ok "Placed: $bin_dir/$dest_name"
 
 # -------------------------------------------------------------------- Run ---
