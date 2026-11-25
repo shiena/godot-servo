@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  push:
+    branches: ['**']
   pull_request:
     branches: [main]
 
@@ -144,7 +146,9 @@ jobs:
           key: gstreamer-${{ runner.os }}-desktop-${{ hashFiles('scripts/gstreamer-sdk.json') }}
 
       - name: Build and stage the addon
-        run: ./scripts/build.sh
+        run: |
+          if [[ "$RUNNER_OS" == macOS ]]; then export CARGO_PROFILE_DEV_STRIP=none; fi
+          ./scripts/build.sh
 
       - uses: actions/upload-artifact@v7
         with:
