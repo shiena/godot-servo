@@ -43,6 +43,7 @@ def stage(platform, sdk, dest):
         elif name in ("coreelements", "app", "playback", "audioconvert", "isomp4"):
             raise RuntimeError(f"Missing required plugin: {plugin}")
     if platform == "windows":
+        shutil.copy2(sdk / "libexec/gstreamer-1.0/gst-plugin-scanner.exe", dest)
         for dll in (sdk / "bin").glob("*.dll"):
             if dll.name.lower() not in ("libegl.dll", "libglesv2.dll"):
                 shutil.copy2(dll, dest)

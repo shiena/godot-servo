@@ -32,7 +32,12 @@ pub fn initialize() -> bool {
         #[cfg(windows)]
         {
             // Windows also resolves delay-loaded dependencies when a plugin starts.
-            let mut paths = vec![plugins.parent().unwrap().to_path_buf()];
+            let runtime = plugins.parent().unwrap();
+            std::env::set_var(
+                "GST_PLUGIN_SCANNER_1_0",
+                runtime.join("gst-plugin-scanner.exe"),
+            );
+            let mut paths = vec![runtime.to_path_buf()];
             paths.extend(std::env::split_paths(
                 &std::env::var_os("PATH").unwrap_or_default(),
             ));

@@ -54,7 +54,8 @@ jobs:
 
   windows:
     name: Build and self check (Windows)
-    runs-on: windows-latest
+    # VS 2022 ships STL headers compatible with the runner's libclang.
+    runs-on: windows-2022
     # Building Servo from scratch takes an hour or so. The ceiling sits a little
     # above that, so a stalled self check cannot hold a runner for the default six.
     timeout-minutes: 100
@@ -120,7 +121,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-24.04]
     steps:
       - uses: actions/checkout@v7
 
@@ -131,11 +132,14 @@ jobs:
           cache-on-failure: true
 
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxext-dev libgl1-mesa-dev \
-            patchelf libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
+            patchelf clang-18 libclang-18-dev libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
+          # bindgen needs clang's builtin headers to match its loaded libclang.
+          echo "CLANG_PATH=/usr/bin/clang-18" >> "$GITHUB_ENV"
+          echo "LIBCLANG_PATH=/usr/lib/llvm-18/lib" >> "$GITHUB_ENV"
 
       - uses: actions/cache@v4
         with:
@@ -197,7 +201,7 @@ jobs:
 
       - name: Build and stage the addon
         run: |
-          sdkmanager "ndk;27.2.12479018"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           # Android alone is built in release. A debug .so is 1.5 GB, far past
           # what an APK can carry.

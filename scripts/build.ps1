@@ -59,9 +59,14 @@ if ($Checks) {
 
 if (-not $NoBuild) {
     Say "cargo build ($profileName)"
-    $cargoArgs = @('build')
+    $cargoArgs = @('build', '--message-format=json-render-diagnostics')
     if ($Release) { $cargoArgs += '--release' }
-    cargo @cargoArgs
+    cargo @cargoArgs | ForEach-Object {
+        $message = $_ | ConvertFrom-Json
+        if ($message.reason -eq 'build-script-executed' -and $message.package_id -match '#mozangle@') {
+            $angleDir = $message.out_dir
+        }
+    }
     if ($LASTEXITCODE -ne 0) { Die "cargo build failed (exit $LASTEXITCODE)" }
 }
 
@@ -74,23 +79,15 @@ if (-not (Test-Path $built)) { Die "Build artifact not found: $built" }
 New-Item -ItemType Directory -Force $binDir | Out-Null
 Copy-Item -Force $built (Join-Path $binDir 'godot_servo.x86_64.dll')
 
-# ANGLE, picked out of the OUT_DIR mozangle put it in. Without it surfman's
-# LoadLibrary fails and Servo never starts.
-#
-# A build.rs cannot reach it: cargo makes no promise about the order in which a
-# crate's own build.rs and its dependencies' run, so mozangle's OUT_DIR may not
-# exist yet. Looking after cargo build finishes depends on no such order.
-# Changing a feature makes cargo rebuild mozangle under a different fingerprint,
-# leaving several mozangle-* directories. Newest first, so the stale one is not
-# picked up.
-$angleDir = Get-ChildItem (Join-Path $target 'build') -Directory -Filter 'mozangle-*' -ErrorAction SilentlyContinue |
-    ForEach-Object { Join-Path $_.FullName 'out' } |
-    Where-Object { Test-Path (Join-Path $_ 'libEGL.dll') } |
-    Sort-Object { (Get-Item (Join-Path $_ 'libEGL.dll')).LastWriteTime } -Descending |
-    Select-Object -First 1
-if (-not $angleDir) { Die "libEGL.dll not found under $targetuild\mozangle-*/out (did the build finish?)" }
+# Cargo reports the active build script output even when the crate is cached.
 foreach ($dll in 'libEGL.dll', 'libGLESv2.dll') {
-    Copy-Item -Force (Join-Path $angleDir $dll) (Join-Path $binDir $dll)
+    $destination = Join-Path $binDir $dll
+    if (-not $NoBuild) {
+        if (-not $angleDir) { Die 'Cargo did not report the mozangle build output directory' }
+        Copy-Item -LiteralPath (Join-Path $angleDir $dll) -Destination $destination -Force
+    } elseif (-not (Test-Path -LiteralPath $destination)) {
+        Die "Missing staged $dll. Run the build once before using -NoBuild."
+    }
 }
 
 if ($gstRoot) {

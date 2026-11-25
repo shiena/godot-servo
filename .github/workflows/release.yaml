@@ -58,7 +58,8 @@ jobs:
 
   build-windows:
     needs: prepare
-    runs-on: windows-latest
+    # VS 2022 ships STL headers compatible with the runner's libclang.
+    runs-on: windows-2022
     timeout-minutes: 100
     steps:
       - uses: actions/checkout@v7
@@ -102,7 +103,7 @@ jobs:
         include:
           - os: macos-latest
             platform: macos
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             platform: linux
     steps:
       - uses: actions/checkout@v7
@@ -116,7 +117,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxext-dev libgl1-mesa-dev \
-            patchelf libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
+            patchelf clang-18 libclang-18-dev libssl-dev libdbus-1-dev libudev-dev libfontconfig1-dev
+          # bindgen needs clang's builtin headers to match its loaded libclang.
+          echo "CLANG_PATH=/usr/bin/clang-18" >> "$GITHUB_ENV"
+          echo "LIBCLANG_PATH=/usr/lib/llvm-18/lib" >> "$GITHUB_ENV"
 
       # After rust-cache on purpose. It keys its cache on Cargo.lock, so bumping the
       # version first would miss the cache and rebuild Servo from scratch.
@@ -180,7 +184,7 @@ jobs:
 
       - name: Build and stage the addon
         run: |
-          sdkmanager "ndk;27.2.12479018"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           ./scripts/build.sh --release --android
 
